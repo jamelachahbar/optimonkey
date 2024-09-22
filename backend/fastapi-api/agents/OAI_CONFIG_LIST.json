@@ -1,0 +1,13 @@
+[
+    {
+        "model": "",
+        "api_key": ""
+    },
+    {
+        "model": "gpt-4o",
+        "api_key": "5060bfdd7cbf48789d6ab72e350dc40f",
+        "base_url": "https://aoai-jml.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "2023-03-15-preview"
+    }
+]

@@ -1,0 +1,5 @@
+id,name,type,location
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/acodemos/providers/Microsoft.Compute/disks/hackatonunuseddisk,hackatonunuseddisk,microsoft.compute/disks,eastus
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/rg-tubdemos/providers/Microsoft.Compute/virtualMachines/vm-forcedetachdemo1-1,vm-forcedetachdemo1-1,microsoft.compute/virtualmachines,swedencentral
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/azdownvm_group/providers/Microsoft.Network/publicIPAddresses/ad-lb-pip,ad-lb-pip,microsoft.network/publicipaddresses,eastus
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/rg-tubdemos/providers/Microsoft.Network/networkInterfaces/NIC-VM-LINUX-01,NIC-VM-LINUX-01,microsoft.network/networkinterfaces,eastus

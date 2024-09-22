@@ -1,0 +1,7 @@
+Resource Type,Resource Name,Location,Current State,Recommendations
+Microsoft.Compute/disks,hackatonunuseddisk,eastus,Unattached,Delete unattached disk to save costs.
+Microsoft.Compute/disks,azdownvm_885b10b2_OsDisk_1_e372f9e866374bbc92ea2426bb0298ba,westeurope,Reserved,Evaluate necessity and delete if not required.
+Microsoft.Compute/virtualMachines,azdownvm_885b10b2,westeurope,Deallocated,Keep deallocated if not needed to save costs.
+Microsoft.Compute/virtualMachines,Sample-VM,northeurope,Running,Ensure efficient configuration and use lower-cost storage.
+Microsoft.Network/publicIPAddresses,ad-lb-pip,eastus,Associated (Dynamic),Review and confirm the necessity of dynamic IP.
+Microsoft.Network/networkInterfaces,NIC-VM-LINUX-01,eastus,Associated,Ensure interfaces are efficiently allocated.
