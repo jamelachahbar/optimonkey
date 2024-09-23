@@ -10,7 +10,7 @@ async def start_agents():
     return {"conversation": conversation}
 @router.get("/download-recommendations")
 async def download_recommendations():
-    csv_file_path = "azure_cost_optimization_recommendations.csv"  # Update the file path as necessary
+    csv_file_path = "azure_analysis_results.csv"  # Update the file path as necessary
     if os.path.exists(csv_file_path):
         return Response(open(csv_file_path, "rb").read(), media_type="text/csv")
     return {"error": "CSV file not found"}

@@ -15,20 +15,21 @@ from azure.monitor.query import LogsQueryClient
 print(azure.monitor.query.__version__)
 from autogen import register_function
 from azure.identity import AzureCliCredential
- 
+from azure.monitor.query import MetricsQueryClient  # Add this import
+
+
 # Load configuration from JSON
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 30,
+    "cache_seed": 42,
     "timeout": 30
 }
 
-subscription_id = "e9b4640d-1f1f-45fe-a543-c0ea45ac34c1"
+subscription_id = "e9b4640d-1f1f-45fe-a543-c0ea45ac34c1","38c26c07-ccce-4839-b504-cddac8e5b09d"
 threshold = 3
-days = 7
+days = 30
 
-# Define the prompt
 
 # Define the prompt
 # prompt =f"""
@@ -38,12 +39,27 @@ days = 7
 
 
 
+resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines", "Microsoft.Network/publicIPAddresses", "Microsoft.Network/networkInterfaces","Microsoft.CognitiveServices","Microsoft.DataFactory", "Microsoft.Databricks"]
+
 # Define the prompt for different types of resources, this prompt gives us good results
-resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines", "Microsoft.Network/publicIPAddresses", "Microsoft.Network/networkInterfaces"]
+
 prompt= f"""
-Please analyze my Azure environment and find opportunities to save money. Give me a shortlist. Look for these types of resources {resources}
+Please analyze my Azure environment and find top 10 opportunities to save money. Give me only 10 recommendations to work with. Look for these types of resources {resources} on these subscriptions or one of these 
+{subscription_id} and save it to a csv file using the name provided by the function. Provide advice on what to do with this information and output it along with the results in the csv file. MAke sure you assert these resources are not being used much or not at all based on usage since last {days} days.
 """
+
+
+
+
 # Define the prompt for storage account -> working
+# prompt =f"""
+#     Please analyze my Azure environment and find all storage accounts that haven't been accessed, since last {days} days in my Azure subscription id:{subscription_id} and output
+#     the results in a table format and save the results to a csv file. 
+#     Provide advice on what to do with this information, output it along with the results in the csv file.
+#     """
+
+
+# Define the prompt for storage account and unutilized resources like disks, public ip's and network interfaces
 # prompt =f"""
 #     Please analyze my Azure environment and find all potential saving for these resources: {resources}, and check if possible if they haven't been used or not used much based on usage since last {days} days in my Azure subscription id:{subscription_id} and output 
 #     the results in a table format and save the results to a csv file. Provide advice on what to do with this information and output it along with the results in the csv file.
@@ -57,12 +73,7 @@ Please analyze my Azure environment and find opportunities to save money. Give m
 #     When we talk about activity, for disks it is the unattached state and VM's it's CPU usage below threshold of {threshold}, for public IP's it's the number of connections and for network interfaces it's the number of connections. For storage accounts it's the number of read and write operations and last access time.
 #     """
 
-# Define the prompt for storage account and unutilized resources like disks, public ip's and network interfaces
-# prompt =f"""
-#     Please analyze my Azure environment and find all storage accounts that haven't been accessed, unattached disks, unattached public ip's and unattached network interfaces since last {days} days in my Azure subscription id:{subscription_id} and output
-#     the results in a table format and save the results to a csv file. 
-#     Provide advise on what to do with this information, output it along with the results in the csv file.
-#     """
+
 # prompt =f"""
 #     You are a FinOps Expert Team and Azure Guru with 10 years experience.
 #     Please analyze my Azure environment based on status and usage using platform metrics from last {days} days and find top 5 savings opportunities and the resources related to this in my subscription id:{subscription_id} and output
@@ -120,7 +131,7 @@ coder = autogen.AssistantAgent(
     not solved even after the code is executed successfully, analyze the problem, revisit your 
     assumption, collect additional info you need, and think of a different approach to try.
     When you find an answer, verify the answer carefully. Include verifiable evidence in your response 
-    if possible.
+    if possible. put # filename: azure_cost_saving_opportunities at the top of the code block to save the code to a file.,
     Reply "TERMINATE" in the end when everything is done""", 
     description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner`.",
     llm_config={
@@ -148,18 +159,45 @@ Finally, based on the critique above, suggest a concrete list of actions that th
     llm_config=llm_config,
 )
 
-# Custom Pydantic model to handle query results
-class KustoQueryResult(BaseModel):
-    data: List[dict]  # You can customize this to fit the exact structure of your query response
+# # Custom Pydantic model to handle query results
+# class KustoQueryResult(BaseModel):
+#     data: List[dict]  # You can customize this to fit the exact structure of your query response
 
 # Define Kusto Query Function
+# def run_kusto_query(query: Annotated[str, "The KQL query"], subscriptions: Annotated[List[str], "List of subscription IDs"]) -> List[Dict]:
+#     credential = DefaultAzureCredential()
+#     resourcegraph_client = ResourceGraphClient(credential)
+
+#     # Ensure the subscription ID is passed into the request
+#     query_request = QueryRequest(query=query, subscriptions=subscriptions)
+#     query_response = resourcegraph_client.resources(query_request)
+    
+#     return query_response.data
+
 def run_kusto_query(query: Annotated[str, "The KQL query"], subscriptions: Annotated[List[str], "List of subscription IDs"]) -> List[Dict]:
+    """
+    Executes a Kusto Query Language (KQL) query using Azure Resource Graph.
+
+    Args:
+        query (str): The KQL query to run.
+        subscriptions (list): List of subscription IDs to query.
+
+    Returns:
+        dict: The response from Azure Resource Graph.
+    """
     credential = DefaultAzureCredential()
     resourcegraph_client = ResourceGraphClient(credential)
-    
-    query_request = QueryRequest(query=query, subscriptions=subscriptions)
+
+    # Create the query request object
+    query_request = QueryRequest(
+        query=query,
+        subscriptions=subscriptions
+    )
+
+    # Execute the query
     query_response = resourcegraph_client.resources(query_request)
-    
+
+    # Return the query result data
     return query_response.data
 
 # Register Kusto Query Function
@@ -171,81 +209,50 @@ register_function(
     description="This function generates the code to run a Kusto Query Language (KQL) query using Azure Resource Graph.",
 )
 
-# Define Log Query Function with Annotations
-def run_log_query(
-    workspace_id: Annotated[str, "The Log Analytics Workspace GUID"],
-    query: Annotated[str, "The KQL query to run on the log data"],
-    days: Annotated[int, "The number of days to query logs for"] = 1,
-    use_cli_credential: bool = False
-) -> List[Dict]:
+
+# Define a function that does not include custom types in the function signature
+def query_usage_metrics(
+    resource_id: Annotated[str, "The Azure resource ID"],
+    metric_names: Annotated[List[str], "List of metric names to query"] = ['Percentage CPU', 'Network In', 'Network Out'],
+    aggregation: str = 'Total',
+    timespan: str = 'P30D',
+    interval: str = 'P1D'
+) -> Dict[str, float]:
     """
-    Executes a log query on Azure Monitor Logs for a specified Log Analytics Workspace.
-
-    Args:
-        workspace_id (str): The Log Analytics Workspace GUID.
-        query (str): The KQL query to run on the log data.
-        days (int): The number of days to query logs for.
-        use_cli_credential (bool): Whether to use Azure CLI Credential for authentication (default is False).
-
-    Returns:
-        List[Dict]: The logs data as a list of dictionaries or an empty list in case of an error.
+    Query usage metrics for a given Azure resource. The MetricsQueryClient is initialized within the function to avoid
+    passing it through Pydantic validation.
     """
-    # Choose the credential type based on the input parameter
-    if use_cli_credential:
-        logging.info("Using Azure CLI Credential for authentication.")
-        credential = AzureCliCredential()  # CLI context
-    else:
-        logging.info("Using Default Azure Credential for authentication.")
-        credential = DefaultAzureCredential()  # Default context for broader use cases
+    # Initialize the MetricsQueryClient inside the function
+    monitor_client = MetricsQueryClient(DefaultAzureCredential())
 
-    logs_client = LogsQueryClient(credential)
-    # workspace_id = "608cd3e5-cf6b-4fa0-ac79-b5db5136c18f"  # This should be the Workspace GUID, not the full ARM path
+    # Query the metrics
+    metrics_data = monitor_client.metrics.list(
+        resource_id,
+        timespan=timespan,
+        interval=interval,
+        metricnames=','.join(metric_names),
+        aggregation=aggregation
+    )
+    
+    total_usage = {}
+    
+    # Calculate total usage for each metric
+    for metric in metrics_data.value:
+        metric_name = metric.name.value
+        total = sum([data.total for timeseries in metric.timeseries for data in timeseries.data if data.total is not None])
+        total_usage[metric_name] = total
+    
+    return total_usage
 
-    # Calculate the time range for the query
-    utc = pytz.UTC
-    end_time = utc.localize(datetime.utcnow())
-    start_time = end_time - timedelta(days=days)
-
-    log_data = []
-
-    # Debug: log start and end time
-    logging.info(f"Querying logs from {start_time} to {end_time} in workspace {workspace_id}")
-
-    try:
-        # Execute the log query
-        response = logs_client.query_workspace(
-            workspace_id="608cd3e5-cf6b-4fa0-ac79-b5db5136c18f",
-            query=query,
-            timespan=(start_time, end_time)
-        )
-
-        # Check for empty response
-        if not response.tables:
-            logging.warning("No tables found in the response.")
-            return []
-
-        # Process the response
-        for table in response.tables:
-            for row in table.rows:
-                log_data.append({col.name: val for col, val in zip(table.columns, row)})
-
-        logging.info(f"Successfully retrieved {len(log_data)} rows of data.")
-        return log_data
-
-    except Exception as e:
-        # Improved error handling with logging
-        logging.error(f"Error querying logs: {str(e)}", exc_info=True)
-        return []
-# Register Log Query Function
+# Now, register the function without the custom type in the signature
 register_function(
-    run_log_query,
+    query_usage_metrics,
     caller=coder,
     executor=user_proxy,
-    name="run_log_query",
-    description="This function executes a log query using Azure Monitor Logs.",
+    name="query_usage_metrics",
+    description="Query Azure Monitor metrics for the specified resource and metrics."
 )
 
-# Define the function to save results to CSV
 # Define the function to save results to CSV
 def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_results.csv") -> str:
     if not results:
@@ -301,6 +308,7 @@ def start_agent_conversation():
             "role": message.get("role", ""),
             "name": message.get("name", ""),
             "timestamp": datetime.now().strftime("%H:%M:%S"),  # or use actual timestamps if available
+
         }
         conversation.append(msg_content)
 
