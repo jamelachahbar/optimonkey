@@ -1,6 +1,0 @@
-Resource ID,Name,Type,Location,Usage,Recommendation
-/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/acodemos/providers/Microsoft.Compute/disks/hackatonunuseddisk,hackatonunuseddisk,Disk,eastus,Unattached,Delete or archive
-/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/finops-hub021/providers/Microsoft.Storage/storageAccounts/finopshub0275wqmmubtdx2s,finopshub0275wqmmubtdx2s,Storage Account (Premium_LRS),swedencentral,Minimal,Downgrade to Standard_LRS
-/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/cloud-shell-storage-westeurope/providers/Microsoft.Storage/storageAccounts/csb100320026935034a,csb100320026935034a,Storage Account,westeurope,Limited by IP,Review necessity or delete
-/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/mgmtbdaa,mgmtbdaa,Storage Account,westeurope,Low,Switch to LRS for cost reduction
-/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Compute/disks/VM-LINUX-01_OsDisk_1_765c8e478e9148afa4ba3d2dc370d52e,VM-LINUX-01_OsDisk,Disk,eastus,Reserved,Reduce size or stop VM

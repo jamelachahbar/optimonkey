@@ -1,4 +1,0 @@
-Resource Name,Subscription ID,Resource Type,Current Usage,Recommended Action
-hackatonunuseddisk,38c26c07-ccce-4839-b504-cddac8e5b09d,Disk,Unattached,Deallocate or delete if unused.
-csb1003200265375371,38c26c07-ccce-4839-b504-cddac8e5b09d,Storage Account,Standard_LRS,Evaluate cost efficiency and consider consolidating.
-finopshub0275wqmmubtdx2s,38c26c07-ccce-4839-b504-cddac8e5b09d,Storage Account,Premium_LRS,Consider resizing to standard tier.
