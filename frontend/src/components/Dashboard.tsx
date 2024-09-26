@@ -45,15 +45,20 @@ const Dashboard: React.FC = () => {
     fetch('/api/start-agents', { method: 'POST' })
       .then((response) => response.json())
       .then((data) => {
+        console.log(data); // Add logging to inspect the response
         if (Array.isArray(data.conversation)) {
           setConversation(data.conversation);
+        } else {
+          console.error("Conversation data is not in the expected format.");
         }
         setLoadingAgents(false);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('Error fetching agents:', error);
         setLoadingAgents(false);
       });
   };
+  
 
   const fetchRecommendations = async () => {
     if (!showRecommendations && data.length === 0) {
@@ -158,7 +163,7 @@ const Dashboard: React.FC = () => {
         )}
         <Box bg={bgColor} p={3} borderRadius={borderRadius} boxShadow="md" flex="1">
           <Text fontSize="sm" fontWeight="bold" mb={1}>
-            {message.name} {message.timestamp && `• ${message.timestamp}`}
+            {message.name} {message.timestamp ? `• ${message.timestamp}` : ''}
           </Text>
           {formatContent()}
         </Box>
@@ -215,18 +220,12 @@ const Dashboard: React.FC = () => {
 
       {/* Render Chat Messages */}
       {conversation.length > 0 && (
-        <Box
-          mt={4}
-          p={4}
-          borderWidth="1px"
-          borderRadius="lg"
-          maxHeight="600px"
-          overflowY="auto"
-          bg={useColorModeValue('gray.50', 'gray.800')}
-        >
+        <Box mt={4} p={4} borderWidth="1px" borderRadius="lg" maxHeight="600px" overflowY="auto" bg={useColorModeValue('gray.50', 'gray.800')}>
           <VStack spacing={4} align="stretch">
-            {conversation.map((message, index) => renderMessage(message, index))}
-                  {/* Render CSV Download Link */}
+            {conversation.map((message, index) => {
+              console.log('Rendering message:', message); // Add logging here
+              return renderMessage(message, index);
+            })}
             {renderCSVDownloadLink()}
           </VStack>
         </Box>
