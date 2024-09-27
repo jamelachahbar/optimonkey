@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional, List, Dict
 import logging
 import autogen
 from typing_extensions import Annotated
@@ -12,7 +12,7 @@ from autogen import register_function
 import csv
 import os
 from azure.monitor.query import MetricsQueryClient
-
+from azure.mgmt.monitor import MonitorManagementClient
 # Load environment variables
 from dotenv import load_dotenv
 
@@ -33,10 +33,10 @@ config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
     "cache_seed": 42,
-    "timeout": 30
+    "timeout": 60
 }
 
-subscription_id = ("e9b4640d-1f1f-45fe-a543-c0ea45ac34c1", "38c26c07-ccce-4839-b504-cddac8e5b09d")
+subscription_id = ("38c26c07-ccce-4839-b504-cddac8e5b09d")
 threshold = 3
 days = 30
 
@@ -45,20 +45,39 @@ resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines",
              "Microsoft.CognitiveServices", "Microsoft.DataFactory", "Microsoft.Databricks"]
 
 # Define the task prompt for the assistant
+# prompt = f"""
+# Please analyze my Azure environment and find top 5 opportunities to save money based on activity and or usage. Provide proof data and metrics to justify this list.
+# Give me only 5 recommendations to work with.
+# Look for disks and storage accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
+# Provide advice on what to do with this information and output it along with the results in the CSV file.
+# Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
+# """
+
+
+# prompt = f"""
+# Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. Provide proof data and metrics to justify this list.
+# Give me only 5 recommendations to work with.
+# Look for Virtual Machines on these subscriptions or one of these {subscription_id} and save it to a CSV file.
+# Provide advise on what to do with this information and output it along with the results in the CSV file.
+# Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
+# """
+
+
+
 prompt = f"""
-Please analyze my Azure environment and find top 5 opportunities to save money based on activity and or usage. Provide proof data and metrics to justify this list.
+Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. Provide proof data and metrics to justify this list.
 Give me only 5 recommendations to work with.
-Look for disks and storage accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
-Provide advice on what to do with this information and output it along with the results in the CSV file.
+Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
+Provide advise on what to do with this information and output it along with the results in the CSV file.
 Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
 """
-
 # Initialize the Planner assistant
 planner = autogen.AssistantAgent(
     name="Planner",
     system_message="""You are a helpful AI Assistant. You are the planner of this team of assistants. 
     You plan the tasks and make sure everything is on track. Suggest a plan. Revise the plan if needed. When the plan is solid and
-    ready to be executed, pass it to the Coder.""",
+    ready to be executed, pass it to the Coder. Also make sure the plan includes the functions the Coder can call and the order in which they should be called.""",
+    description="I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. Let’s make sure each function is executed as planned. ",
     llm_config=llm_config,
     human_input_mode="TERMINATE"
 )
@@ -83,7 +102,8 @@ user_proxy = autogen.UserProxyAgent(
     system_message="You are a helpful AI Assistant. You are the user proxy. You can execute the code and interact with the system.",
     description="""User Proxy is a user who can execute the code and interact with the system. 
     I also check if the plan was applied and the output we have is according to the instructions. 
-    If not, I will ask the planner to revise the plan.""",
+    If not, I will ask the planner to revise the plan. Make sure all the functions are called in the right order and the code is well structured and easy to understand. Also make sure there is an output and 
+    the output is according to the instructions. Make sure there sis a CSV file with the results.""",
     max_consecutive_auto_reply=10,
     code_execution_config={
         "work_dir": "coding",
@@ -99,6 +119,8 @@ coder = autogen.AssistantAgent(
     then the next function which is extract_resource_ids, and so on.
     The user cannot provide any other feedback or perform any other action beyond executing the code you suggest. 
     If the result indicates there is an error, fix the error and output the code again.
+    Always use functions you have access to and start with run_kusto_query, 
+    then the next function which is extract_resource_ids, and then in the END use the analyze_resources_and_query_metrics function, followed by the save_results_to_csv function.
     TERMINATE the conversation when the task is complete.""", 
     description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner` and before `UserProxy`.",
     llm_config={
@@ -112,7 +134,19 @@ coder = autogen.AssistantAgent(
 # Initialize the Critic assistant for code evaluation
 critic = autogen.AssistantAgent(
     name="Critic",
-    system_message="""Critic. You are a helpful AI assistant. You are highly skilled in evaluating the quality of a given code by providing a score from 1 (bad) - 10 (good) while providing clear rationale.""",
+    system_message="""Critic. You are a helpful AI assistant. You are highly skilled in evaluating the quality of a given code by providing a score from 1 (bad) - 10 (good) while providing clear rationale. YOU MUST CONSIDER VISUALIZATION BEST PRACTICES for each evaluation. Specifically, you can carefully evaluate the code across the following dimensions:
+- bugs (bugs):  are there bugs, logic errors, syntax error or typos? Are there any reasons why the code may fail to compile? How should it be fixed? If ANY bug exists, the bug score MUST be less than 5.
+- Data transformation (transformation): Is the data transformed appropriately for the type? E.g., is the dataset appropriated filtered, aggregated, or grouped if needed? If a date field is used, is the date field first converted to a date object etc?
+- Goal compliance (compliance): how well the code meets the specified goals?
+- Visualization type (type): CONSIDERING BEST PRACTICES, is the type appropriate for the data and intent? Is there a type that would be more effective in conveying insights? If a different type is more appropriate, the score MUST BE LESS THAN 5.
+- Data encoding (encoding): Is the data encoded appropriately for the type?
+- Aesthetics (aesthetics): Are the aesthetics of the appropriate for the type and the data?
+YOU MUST PROVIDE A SCORE for each of the above dimensions.
+{bugs: 0, transformation: 0, compliance: 0, type: 0, encoding: 0, aesthetics: 0}
+Do not suggest code.
+Finally, based on the critique above, suggest a concrete list of actions that the coder should take to improve the code.
+Do not come up with a plan or suggest a code. You can only critique the code.
+Make sure the Coder uses the functions in the right order and the code is well structured and easy to understand.""",
     llm_config=llm_config,
     human_input_mode="TERMINATE"
 )
@@ -134,6 +168,7 @@ def run_kusto_query(query: Annotated[str, "The KQL query"], subscriptions: Annot
     query_request = QueryRequest(query=query, subscriptions=subscriptions)
     query_response = resourcegraph_client.resources(query_request)
     return query_response.data
+    # pass this as a parameter to the next function
 
 # Register Kusto Query Function with the system
 register_function(
@@ -161,7 +196,10 @@ def extract_resource_ids(kusto_results: List[Dict]) -> List[str]:
         resource_id = result.get("resourceId")  # Assuming "resourceId" is the field in the Kusto result
         if resource_id:
             resource_ids.append(resource_id)
+    # resource_ids = extract_resource_ids(kusto_results)
     return resource_ids
+
+
 
 # Register the resource ID extraction function
 register_function(
@@ -172,30 +210,49 @@ register_function(
     description="This function extracts the resourceId field from Kusto query results."
 )
 
-# Define the function to query usage metrics for a given Azure resource
+# Define function to query usage metrics based on resource type
 def query_usage_metrics(
-    resource_id: Annotated[str, "The Azure resource ID"],
-    metric_names: Annotated[List[str], "List of metric names to query"] = ['Percentage CPU', 'Network In', 'Network Out', 'Disk Read Bytes', 'Disk Write Bytes', 'Disk Read Operations', 'Disk Write Operations'],
-    aggregation: str = 'Total',
+    resource_id: str,
+    resource_type: str,  # The Azure resource type
+    metric_names: Optional[List[str]] = None,  # Use optional metric_names based on resource type
+    aggregation: str = 'Average',  # Default to Average for percentage metrics
     timespan: str = 'P30D',
-    interval: str = 'P1D'
+    interval: Optional[str] = None  # Dynamically set based on resource type
 ) -> Dict[str, float]:
     """
-    Query usage metrics for a given Azure resource.
+    Query usage metrics for a given Azure resource, adjusting time grain based on the resource type.
 
     Args:
         resource_id (str): The Azure resource ID.
-        metric_names (List[str]): List of metric names to query.
-        aggregation (str): The type of aggregation to use (e.g., 'Total').
+        resource_type (str): The type of the Azure resource (e.g., 'Microsoft.Compute/virtualMachines').
+        metric_names (List[str], optional): List of metric names to query. Defaults will be used based on resource type.
+        aggregation (str): The type of aggregation to use (e.g., 'Average' for percentage metrics).
         timespan (str): The timespan to query over (e.g., 'P30D' for 30 days).
-        interval (str): The granularity of the data (e.g., 'P1D' for daily).
+        interval (str, optional): The granularity of the data (e.g., 'P1D' for daily or 'P1H' for hourly).
 
     Returns:
         Dict[str, float]: Total usage for each queried metric.
     """
+
+    # Normalize the resource_type to lowercase for case-insensitive comparison
+    resource_type_normalized = resource_type.lower()
+
+    # Define default metrics based on the resource type
+    if resource_type_normalized == "microsoft.compute/virtualmachines":
+        metric_names = metric_names or ['Percentage CPU', 'Network In', 'Network Out', 'Disk Read Bytes', 'Disk Write Bytes']
+        interval = interval or 'P1D'  # Use daily intervals for VMs
+    elif resource_type_normalized == "microsoft.storage/storageaccounts":
+        metric_names = metric_names or ['UsedCapacity', 'Transactions', 'Ingress', 'Egress', 'Availability']
+        interval = 'PT1H'  # Use hourly intervals for storage accounts
+    elif resource_type_normalized == "microsoft.compute/disks":
+        metric_names = metric_names or ['Composite Disk Read Bytes/sec', 'Composite Disk Write Bytes/sec']
+        interval = interval or 'P1D'  # Use daily intervals for disks
+    else:
+        raise ValueError(f"Unsupported resource type: {resource_type}")
+
     # Initialize the MonitorManagementClient
     monitor_client = MonitorManagementClient(
-        credential=DefaultAzureCredential(), 
+        credential=DefaultAzureCredential(),
         subscription_id='<Your-Subscription-ID>'  # Replace with your actual subscription ID
     )
 
@@ -207,15 +264,22 @@ def query_usage_metrics(
         metricnames=','.join(metric_names),
         aggregation=aggregation
     )
-    
+
     total_usage = {}
-    
-    # Calculate total usage for each metric
+
+    # Calculate average usage for each metric
     for metric in metrics_data.value:
         metric_name = metric.name.value
-        total = sum([data.total for timeseries in metric.timeseries for data in timeseries.data if data.total is not None])
-        total_usage[metric_name] = total
-    
+        average = sum(
+            [
+                data.average  # Use the average aggregation for percentage metrics like CPU
+                for timeseries in metric.timeseries
+                for data in timeseries.data
+                if data.average is not None
+            ]
+        ) / len(metric.timeseries) if metric.timeseries else 0
+        total_usage[metric_name] = average
+
     return total_usage
 
 # Register the query usage metrics function
@@ -227,30 +291,67 @@ register_function(
     description="This function allows the agent to Query Azure Monitor metrics for the specified resource and metrics."
 )
 
+
 # Define a function to tie together running a Kusto query and querying usage metrics
-def analyze_resources_and_query_metrics(kusto_query: str, subscriptions: List[str]):
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional
+
+# Define a Pydantic model to encapsulate the resource metrics results
+class ResourceMetricsResult(BaseModel):
+    resource_id: str = Field(..., description="The Azure resource ID.")
+    metrics: Dict[str, float] = Field(..., description="The metrics data for the resource.")
+
+class AnalyzeResourcesResponse(BaseModel):
+    resources_analyzed: int = Field(..., description="The number of resources analyzed.")
+    results: List[ResourceMetricsResult] = Field(..., description="A list of resources and their associated metrics.")
+    message: Optional[str] = Field(None, description="Optional message regarding the analysis.")
+
+# Modify the analyze_resources_and_query_metrics function to return a BaseModel
+def analyze_resources_and_query_metrics(kusto_query: str, subscriptions: List[str]) -> AnalyzeResourcesResponse:
     """
     This function runs a Kusto query, extracts resource IDs, and queries usage metrics for each resource.
 
     Args:
         kusto_query (str): The KQL query to execute.
         subscriptions (List[str]): List of Azure subscription IDs.
+
+    Returns:
+        AnalyzeResourcesResponse: A pydantic BaseModel containing the results of the analysis and the metrics for each resource.
     """
     # Step 1: Run the Kusto query to get resource details
     kusto_results = run_kusto_query(kusto_query, subscriptions)
 
-    # Step 2: Extract resource IDs from the Kusto query results
-    if kusto_results:
-        resource_ids = extract_resource_ids(kusto_results)
-    
-        # Step 3: Query usage metrics for each resource ID
-        for resource_id in resource_ids:
-            metrics = query_usage_metrics(resource_id)
-            print(f"Metrics for {resource_id}: {metrics}")
+    if not kusto_results:
+        return AnalyzeResourcesResponse(
+            resources_analyzed=0,
+            results=[],
+            message="No resources found in the Kusto query results."
+        )
     else:
-        print("No resources found in the Kusto query results.")
+        print(f"Kusto results: {kusto_results}")
 
-# Register the higher-level function
+    # Step 2: Extract resource IDs from the Kusto query results
+    resource_ids = extract_resource_ids(kusto_results)
+
+    # Step 3: Query usage metrics for each resource ID
+    resource_metrics_results = []
+    for resource_id in resource_ids:
+        metrics = query_usage_metrics(resource_id)
+        resource_metrics_results.append(
+            ResourceMetricsResult(
+                resource_id=resource_id,
+                metrics=metrics
+            )
+        )
+
+    # Return a structured response encapsulating the resource metrics results
+    return AnalyzeResourcesResponse(
+        resources_analyzed=len(resource_ids),
+        results=resource_metrics_results,
+        message="Analysis completed successfully."
+    )
+
+# Register the higher-level function with return type annotation
 register_function(
     analyze_resources_and_query_metrics,
     caller=coder,
@@ -258,6 +359,7 @@ register_function(
     name="analyze_resources_and_query_metrics",
     description="This function analyzes Azure resources, extracts resource IDs, and queries usage metrics for each resource."
 )
+
 
 # Define the function to save the results to a CSV file
 def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_results.csv") -> str:
@@ -298,7 +400,7 @@ register_function(
 groupchat = autogen.GroupChat(
     agents=[planner, coder, critic, user_proxy], 
     messages=[],  
-    max_round=50,
+    max_round=100,
     speaker_selection_method="round_robin"
 )
 
