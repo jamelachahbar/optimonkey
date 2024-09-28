@@ -1,11 +1,11 @@
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from routers import agents  # Import the new router file
+from routers.agents import router as agents_router  # Import the router from agents
 from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
-
+# Include the agents router
+app.include_router(agents_router)
 # app.include_router(recommendations.router, prefix="/api")
 # app.include_router(analysis.router, prefix="/api")
 app.add_middleware(
@@ -15,9 +15,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(agents.router)  # Add the new router
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8081)
+    uvicorn.run("your_app:app", host="0.0.0.0", port=8000, ws_ping_interval=30, ws_ping_timeout=60)
 

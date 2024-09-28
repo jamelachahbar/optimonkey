@@ -1,6 +1,8 @@
+import json
 from typing import Literal, Optional, List, Dict
 import logging
 import autogen
+from fastapi import WebSocket
 from typing_extensions import Annotated
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resourcegraph import ResourceGraphClient
@@ -15,6 +17,7 @@ from azure.monitor.query import MetricsQueryClient
 from azure.mgmt.monitor import MonitorManagementClient
 # Load environment variables
 from dotenv import load_dotenv
+import websocket
 
 # Load environment variables from the .env file
 env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -99,12 +102,12 @@ def ask_planner(message):
 user_proxy = autogen.UserProxyAgent(
     name="user_proxy",
     human_input_mode="TERMINATE",
-    system_message="You are a helpful AI Assistant. You are the user proxy. You can execute the code and interact with the system.",
-    description="""User Proxy is a user who can execute the code and interact with the system. 
-    I also check if the plan was applied and the output we have is according to the instructions. 
-    If not, I will ask the planner to revise the plan. Make sure all the functions are called in the right order and the code is well structured and easy to understand. Also make sure there is an output and 
-    the output is according to the instructions. Make sure there sis a CSV file with the results.""",
-    max_consecutive_auto_reply=10,
+    system_message="You are a helpful AI assistant. You are the user proxy. You execute code.",
+    # description="""User Proxy is a user who can execute the code and interact with the system. 
+    # I also check if the plan was applied and the output we have is according to the instructions. 
+    # If not, I will ask the planner to revise the plan. Make sure all the functions are called in the right order and the code is well structured and easy to understand. Also make sure there is an output and 
+    # the output is according to the instructions. Make sure there sis a CSV file with the results.""",
+    max_consecutive_auto_reply=3,
     code_execution_config={
         "work_dir": "coding",
         "use_docker": "python:3.10"
@@ -124,11 +127,10 @@ coder = autogen.AssistantAgent(
     TERMINATE the conversation when the task is complete.""", 
     description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner` and before `UserProxy`.",
     llm_config={
-        "cache_seed": 0,
         "config_list": config_list,
         "temperature": 0
     },
-    human_input_mode="TERMINATE"
+    human_input_mode="NEVER"
 )
 
 # Initialize the Critic assistant for code evaluation
@@ -407,23 +409,54 @@ groupchat = autogen.GroupChat(
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
 
-# Define the function to start the agent conversation
-def start_agent_conversation():
+import json
+from datetime import datetime
+from fastapi import WebSocket
+import logging
+
+async def start_agent_conversation(user_message: str, websocket: WebSocket):
     """
-    Starts the agent conversation and logs messages in a conversation list.
+    Initiates a dynamic agent conversation and streams responses through WebSocket.
     """
-    user_proxy.initiate_chat(
-        manager,
-        message=prompt,
-        summary_method="reflection_with_llm"
-    )
+
+    # Clear the previous messages in the chat
+    manager.groupchat.messages.clear()
+
+    # Start the conversation by passing the initial user message to the user_proxy agent
+    user_proxy.initiate_chat(manager, message=user_message, max_round=50)
+
+    # Collect the messages from the conversation
     conversation = []
-    for message in manager.groupchat.messages:
-        msg_content = {
-            "content": message.get("content", ""),
-            "role": message.get("role", ""),
-            "name": message.get("name", ""),
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-        }
-        conversation.append(msg_content)
-    return conversation
+
+    try:
+        for message in manager.groupchat.messages:
+            # Dynamically construct the message content and agent's status
+            msg_content = {
+                "content": message.get("content", ""),
+                "role": message.get("role", ""),
+                "name": message.get("name", ""),
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            conversation.append(msg_content)
+
+            # Construct dynamic agent status update
+            agent_status = {
+                "agent": message.get("name"),
+                "status": "active" if "error" not in message.get("content", "").lower() else "error",
+                "task": message.get("content"),
+                "time": message.get("timestamp")
+            }
+
+            # Send the response back via WebSocket
+            await websocket.send_text(json.dumps(agent_status))
+
+    except Exception as e:
+        logging.error(f"Error during conversation: {str(e)}")
+        await websocket.send_text(json.dumps({
+            "error": "An error occurred during the conversation. Please try again.",
+            "details": str(e)
+        }))
+
+    # Yield each message for further asynchronous processing or logging
+    for msg in conversation:
+        yield msg

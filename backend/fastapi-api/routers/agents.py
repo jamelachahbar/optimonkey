@@ -1,19 +1,31 @@
-from fastapi import APIRouter, Response
-from agents.optimonkeyagents import start_agent_conversation  # Import your agent function
-import os
+import json
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import logging
+from agents.optimonkeyagents import start_agent_conversation  # Import the start_agent_conversation from your agents module
 
 router = APIRouter()
 
-@router.post("/start-agents")
-async def start_agents():
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint to handle agent conversations dynamically.
+    """
+    await websocket.accept()
+    logging.info("WebSocket connection accepted")
+
     try:
-        conversation = start_agent_conversation()  # Ensure this returns conversation data
-        return {"conversation": conversation}  # Return it as JSON
-    except Exception as e:
-        return {"error": str(e)}
-@router.get("/download-recommendations")
-async def download_recommendations():
-    csv_file_path = "azure_analysis_results.csv"  # Update the file path as necessary
-    if os.path.exists(csv_file_path):
-        return Response(open(csv_file_path, "rb").read(), media_type="text/csv")
-    return {"error": "CSV file not found"}
+        while True:
+            # Receive message from the client (user input)
+            data = await websocket.receive_text()
+
+            # Initiate the agent conversation
+            async for response in start_agent_conversation(data, websocket):
+                if response.get("content"):
+                    # Send the message content back to the client via WebSocket
+                    await websocket.send_text(json.dumps(response))
+                    logging.info(f"Sent message: {response}")
+
+    except WebSocketDisconnect:
+        logging.warning("Client disconnected")
+    finally:
+        logging.info("WebSocket connection closed")
