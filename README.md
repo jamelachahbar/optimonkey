@@ -63,10 +63,16 @@ The frontend provides a user-friendly interface where users can choose to start 
     ```bash
     pip install -r requirements.txt
 4. Set up the .env file for your environment variables (such as Azure credentials). You can create an .env file and populate it based on your setup. There is an example .env file.
+5. Start the environment, but make sure you are in the fast api 📂
+  Run the FastAPI server:
+    ```bash
+    uvicorn main:app --reload
+ 
 ### Frontend Setup
 5. Install packages
    ```bash
     npm install
-6. Run the FastAPI server:
-    ```bash
-    uvicorn main:app --reload
+6. Start the front-end, and make sure you are in the front-end 📂 
+   ```bash
+   npm rum dev
+   
