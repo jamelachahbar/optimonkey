@@ -74,5 +74,5 @@ The frontend provides a user-friendly interface where users can choose to start 
     npm install
 6. Start the front-end, and make sure you are in the front-end 📂 
    ```bash
-   npm rum dev
+   npm run dev
    
