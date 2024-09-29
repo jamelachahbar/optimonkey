@@ -1,0 +1,6 @@
+storage_account,used_capacity,transactions,ingress,egress,recommendation
+czoiuoiuoiuoiuoui,910973.0,688.0,4754574.91,592695.95,Downgrade performance tier or consolidate.
+finopshub0275wqmmubtdx2s,3440610024216.0,313.0,9994452.5,25520874.67,Review data retention policies.
+mgmtbadc,146695832668.0,716.0,5070592.38,615573.99,Consider decommissioning.
+mgmtbdaa,6395518333247.0,720.0,2427408.17,3740955.29,Move infrequently accessed data to cooler tiers.
+stgaccttest123654,43706232.0,720.0,465675.77,593185.56,Merge accounts or downgrade.

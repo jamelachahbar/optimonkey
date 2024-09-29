@@ -11,29 +11,27 @@ from datetime import datetime
 from autogen import register_function
 import csv
 import os
-from azure.monitor.query import MetricsQueryClient
 from azure.mgmt.monitor import MonitorManagementClient
-# Load environment variables
 from dotenv import load_dotenv
 
 # Load environment variables from the .env file
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
-# Fetch the Bing API key from the environment variables
+# Fetch the Bing API key from the environment variables, only if we use web search
 bing_api_key = os.getenv("BING_API_KEY")
 
-if not bing_api_key:
-    raise ValueError("Error: Missing Bing API key.")
-else:
-    print(f"Bing API Key Loaded Successfully: {bing_api_key}")
+# if not bing_api_key:
+#     raise ValueError("Error: Missing Bing API key.")
+# else:
+#     print(f"Bing API Key Loaded Successfully: {bing_api_key}")
 
 # Define the configuration for the LLM model
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 42,
-    "timeout": 60
+    "cache_seed": 40,
+    "timeout": 180
 }
 
 subscription_id = ("38c26c07-ccce-4839-b504-cddac8e5b09d")
@@ -63,20 +61,13 @@ resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines",
 # """
 
 
-
-prompt = f"""
-Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. Provide proof data and metrics to justify this list.
-Give me only 5 recommendations to work with.
-Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
-Provide advise on what to do with this information and output it along with the results in the CSV file.
-Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
-"""
 # Initialize the Planner assistant
 planner = autogen.AssistantAgent(
     name="Planner",
     system_message="""You are a helpful AI Assistant. You are the planner of this team of assistants. 
-    You plan the tasks and make sure everything is on track. Suggest a plan. Revise the plan if needed. When the plan is solid and
-    ready to be executed, pass it to the Coder. Also make sure the plan includes the functions the Coder can call and the order in which they should be called.""",
+    You plan the tasks and make sure everything is on track. Suggest a plan. 
+    Revise the plan if needed. When the plan is solid and ready to be executed, pass it to the Coder. 
+    Also make sure the plan includes the functions the Coder can call and the order in which they should be called.""",
     description="I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. Let’s make sure each function is executed as planned. ",
     llm_config=llm_config,
     human_input_mode="TERMINATE"
@@ -104,7 +95,7 @@ user_proxy = autogen.UserProxyAgent(
     I also check if the plan was applied and the output we have is according to the instructions. 
     If not, I will ask the planner to revise the plan. Make sure all the functions are called in the right order and the code is well structured and easy to understand. Also make sure there is an output and 
     the output is according to the instructions. Make sure there sis a CSV file with the results.""",
-    max_consecutive_auto_reply=10,
+    max_consecutive_auto_reply=3,
     code_execution_config={
         "work_dir": "coding",
         "use_docker": "python:3.10"
@@ -114,13 +105,13 @@ user_proxy = autogen.UserProxyAgent(
 # Initialize the Code_Guru assistant for coding tasks
 coder = autogen.AssistantAgent(
     name="Code_Guru",
-    system_message="""You are a helpful AI Assistant. You are a highly experienced programmer specialized in Azure. 
+    system_message="""You are a helpful AI assistant. You are a highly experienced programmer specialized in Azure. 
     Follow the approved plan and save the code to disk. Always use functions you have access to and start with run_kusto_query, 
     then the next function which is extract_resource_ids, and so on.
     The user cannot provide any other feedback or perform any other action beyond executing the code you suggest. 
     If the result indicates there is an error, fix the error and output the code again.
     Always use functions you have access to and start with run_kusto_query, 
-    then the next function which is extract_resource_ids, and then in the END use the analyze_resources_and_query_metrics function, followed by the save_results_to_csv function.
+    then the next function which is query_usage_metrics, and then in the END use the save_results_to_csv function.
     TERMINATE the conversation when the task is complete.""", 
     description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner` and before `UserProxy`.",
     llm_config={
@@ -148,7 +139,7 @@ Finally, based on the critique above, suggest a concrete list of actions that th
 Do not come up with a plan or suggest a code. You can only critique the code.
 Make sure the Coder uses the functions in the right order and the code is well structured and easy to understand.""",
     llm_config=llm_config,
-    human_input_mode="TERMINATE"
+    human_input_mode="NEVER"
 )
 
 # Define the Kusto Query Function
@@ -179,37 +170,6 @@ register_function(
     description="This function generates the code to run a Kusto Query Language (KQL) query using Azure Resource Graph."
 )
 
-# Define a function to extract resource IDs from the Kusto query results
-def extract_resource_ids(kusto_results: List[Dict]) -> List[str]:
-    """
-    Extracts the resourceId field from Kusto query results.
-
-    Args:
-        kusto_results (List[Dict]): The results of a Kusto query.
-
-    Returns:
-        List[str]: List of resource IDs extracted from the query results.
-    """
-    print(f"Extracting resource IDs from: {kusto_results}")  # Debugging output
-    resource_ids = []
-    for result in kusto_results:
-        resource_id = result.get("resourceId")  # Assuming "resourceId" is the field in the Kusto result
-        if resource_id:
-            resource_ids.append(resource_id)
-    # resource_ids = extract_resource_ids(kusto_results)
-    return resource_ids
-
-
-
-# Register the resource ID extraction function
-register_function(
-    extract_resource_ids,
-    caller=coder,
-    executor=user_proxy,
-    name="extract_resource_ids",
-    description="This function extracts the resourceId field from Kusto query results."
-)
-
 # Define function to query usage metrics based on resource type
 def query_usage_metrics(
     resource_id: str,
@@ -231,9 +191,9 @@ def query_usage_metrics(
         interval (str, optional): The granularity of the data (e.g., 'P1D' for daily or 'P1H' for hourly).
 
     Returns:
-        Dict[str, float]: Total usage for each queried metric.
+        Dict[str, Any]: Total usage for each queried metric.
     """
-
+    
     # Normalize the resource_type to lowercase for case-insensitive comparison
     resource_type_normalized = resource_type.lower()
 
@@ -253,7 +213,7 @@ def query_usage_metrics(
     # Initialize the MonitorManagementClient
     monitor_client = MonitorManagementClient(
         credential=DefaultAzureCredential(),
-        subscription_id='<Your-Subscription-ID>'  # Replace with your actual subscription ID
+        subscription_id=subscription_id  # Replace with your actual subscription ID
     )
 
     # Use `resource_id` as the `resource_uri` in the metrics.list call
@@ -265,9 +225,9 @@ def query_usage_metrics(
         aggregation=aggregation
     )
 
-    total_usage = {}
+    resource_usage = {"resource_id": resource_id}
 
-    # Calculate average usage for each metric
+    # Calculate average usage for each metric and append to resource usage
     for metric in metrics_data.value:
         metric_name = metric.name.value
         average = sum(
@@ -278,9 +238,10 @@ def query_usage_metrics(
                 if data.average is not None
             ]
         ) / len(metric.timeseries) if metric.timeseries else 0
-        total_usage[metric_name] = average
 
-    return total_usage
+        resource_usage[metric_name] = average
+
+    return resource_usage
 
 # Register the query usage metrics function
 register_function(
@@ -292,100 +253,46 @@ register_function(
 )
 
 
-# Define a function to tie together running a Kusto query and querying usage metrics
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
 
-# Define a Pydantic model to encapsulate the resource metrics results
-class ResourceMetricsResult(BaseModel):
-    resource_id: str = Field(..., description="The Azure resource ID.")
-    metrics: Dict[str, float] = Field(..., description="The metrics data for the resource.")
-
-class AnalyzeResourcesResponse(BaseModel):
-    resources_analyzed: int = Field(..., description="The number of resources analyzed.")
-    results: List[ResourceMetricsResult] = Field(..., description="A list of resources and their associated metrics.")
-    message: Optional[str] = Field(None, description="Optional message regarding the analysis.")
-
-# Modify the analyze_resources_and_query_metrics function to return a BaseModel
-def analyze_resources_and_query_metrics(kusto_query: str, subscriptions: List[str]) -> AnalyzeResourcesResponse:
-    """
-    This function runs a Kusto query, extracts resource IDs, and queries usage metrics for each resource.
-
-    Args:
-        kusto_query (str): The KQL query to execute.
-        subscriptions (List[str]): List of Azure subscription IDs.
-
-    Returns:
-        AnalyzeResourcesResponse: A pydantic BaseModel containing the results of the analysis and the metrics for each resource.
-    """
-    # Step 1: Run the Kusto query to get resource details
-    kusto_results = run_kusto_query(kusto_query, subscriptions)
-
-    if not kusto_results:
-        return AnalyzeResourcesResponse(
-            resources_analyzed=0,
-            results=[],
-            message="No resources found in the Kusto query results."
-        )
-    else:
-        print(f"Kusto results: {kusto_results}")
-
-    # Step 2: Extract resource IDs from the Kusto query results
-    resource_ids = extract_resource_ids(kusto_results)
-
-    # Step 3: Query usage metrics for each resource ID
-    resource_metrics_results = []
-    for resource_id in resource_ids:
-        metrics = query_usage_metrics(resource_id)
-        resource_metrics_results.append(
-            ResourceMetricsResult(
-                resource_id=resource_id,
-                metrics=metrics
-            )
-        )
-
-    # Return a structured response encapsulating the resource metrics results
-    return AnalyzeResourcesResponse(
-        resources_analyzed=len(resource_ids),
-        results=resource_metrics_results,
-        message="Analysis completed successfully."
-    )
-
-# Register the higher-level function with return type annotation
-register_function(
-    analyze_resources_and_query_metrics,
-    caller=coder,
-    executor=user_proxy,
-    name="analyze_resources_and_query_metrics",
-    description="This function analyzes Azure resources, extracts resource IDs, and queries usage metrics for each resource."
-)
 
 
 # Define the function to save the results to a CSV file
 def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_results.csv") -> str:
     """
-    Saves the analysis results to a CSV file.
+    Saves the analysis results to a CSV file with better error handling and validation.
 
     Args:
-        results (List[Dict]): The data to save to the CSV.
-        filename (str): The name of the CSV file.
+        results (List[Dict]): The data to save to the CSV. Each dict represents a row in the CSV.
+        filename (str): The name of the CSV file (default: "azure_analysis_results.csv").
 
     Returns:
-        str: A message indicating the results were saved successfully.
+        str: A message indicating the results were saved successfully or an error occurred.
     """
-    if not results:
+    # Step 1: Ensure results are valid
+    if not results or len(results) == 0:
         return "No results to save."
 
-    # Extract keys from the first result to use as column headers
-    keys = results[0].keys() if results else []
-    
-    # Save results to a CSV file
-    with open(filename, mode='w', newline='') as file:
-        writer = csv.DictWriter(file, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(results)
-    
-    return f"Results successfully saved to {filename}"
+    # Step 2: Ensure that all rows have consistent keys
+    keys = results[0].keys()
+    for result in results:
+        if result.keys() != keys:
+            logging.error(f"Inconsistent keys found in result: {result}")
+            return "Error: Inconsistent data structure in results."
+
+    try:
+        # Step 3: Write the results to a CSV file
+        with open(filename, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(results)
+
+        logging.info(f"Results successfully saved to {filename}")
+        return f"Results successfully saved to {filename}"
+
+    except Exception as e:
+        # Step 4: Handle any errors that occur during file writing
+        logging.error(f"Failed to save results to CSV: {e}")
+        return f"Error saving results to CSV: {str(e)}"
 
 # Register the save to CSV function
 register_function(
@@ -406,17 +313,53 @@ groupchat = autogen.GroupChat(
 
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
-
 # Define the function to start the agent conversation
-def start_agent_conversation():
+def start_agent_conversation(prompt: Optional[str] = None):
     """
-    Starts the agent conversation and logs messages in a conversation list.
+    Starts the agent conversation with the option to use a custom prompt.
     """
+    # Use default prompt if none is provided
+    if not prompt:
+        prompt = f"""
+        You are a professional Azure consultant.
+        Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
+        
+        # Objective:
+        # Your goal is to provide the user with a smooth, efficient and friendly experience by either providing proof data and metrics to justify the list of recommendations 
+        and by providing advice on what to do with the information.
+        
+        # Tools: Azure Resource Graph, Azure Monitor, Azure SDKs.
+        You have a team of assistants to help you with the task. The agents are: Planner, Coder, Critic, and User Proxy.
+        # Planner: Plans the tasks and makes sure everything is on track.
+        # Coder: Writes the code to analyze the Azure environment and save the results to a CSV file.
+        # Critic: Evaluates the quality of the code and provides a score from 1 to 10.
+        # User Proxy: Executes the code and interacts with the system.
+
+        The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
+        to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
+        extracting resource IDs, querying usage metrics, and saving results to a CSV file.
+        The Critic will evaluate the quality of the code and provide a score from 1 to 10.
+
+        # Task:
+        Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
+        Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
+        Do not run the analyze resources and query metrics function first. 
+        You should start with run kusto query then extract resource id then query metrics,... 
+        Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
+        Provide advice on what to do with this information and output it along with the results in the CSV file.
+        Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
+        Make sure you use the functions in the right order and the code is well structured and easy to understand.
+        Make sure there is a CSV file with the results.
+        Make sure we only have top 5 recommendations.
+        """
+    
+    # Start the conversation with the user proxy
     user_proxy.initiate_chat(
         manager,
-        message=prompt,
-        summary_method="reflection_with_llm"
+        message=prompt  # Use the provided prompt
     )
+    
+    # Collect the conversation messages
     conversation = []
     for message in manager.groupchat.messages:
         msg_content = {
@@ -426,4 +369,6 @@ def start_agent_conversation():
             "timestamp": datetime.now().strftime("%H:%M:%S"),
         }
         conversation.append(msg_content)
+    
     return conversation
+
