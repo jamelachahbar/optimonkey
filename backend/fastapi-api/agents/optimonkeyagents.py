@@ -70,7 +70,10 @@ planner = autogen.AssistantAgent(
     Also make sure the plan includes the functions the Coder can call and the order in which they should be called.
     The run_kusto_query function should be called first, then the query_usage_metrics function, also use get_log_tables_and_query and finally the save_results_to_csv function. 
     """,
-    description="I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. Let’s make sure each function is executed as planned. ",
+    description=""" 
+    I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. 
+    Let’s make sure each function is executed as planned. If it is not, I will ask the coder to revise the plan. If it takes more than 3 tries, I'll ask the coder to write new code and not use the function.
+    """,
     llm_config=llm_config,
     human_input_mode="TERMINATE"
 )
