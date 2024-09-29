@@ -69,7 +69,7 @@ The frontend provides a user-friendly interface where users can choose to start 
     uvicorn main:app --reload
  
 ### Frontend Setup
-5. Install packages
+5. Install packages,  but first navigate to the front-end 📂 
    ```bash
     npm install
 6. Start the front-end, and make sure you are in the front-end 📂 
