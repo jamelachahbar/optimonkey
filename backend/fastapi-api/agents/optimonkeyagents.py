@@ -30,7 +30,7 @@ bing_api_key = os.getenv("BING_API_KEY")
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 40,
+    "cache_seed": 42,
     "timeout": 180
 }
 
@@ -67,7 +67,9 @@ planner = autogen.AssistantAgent(
     system_message="""You are a helpful AI Assistant. You are the planner of this team of assistants. 
     You plan the tasks and make sure everything is on track. Suggest a plan. 
     Revise the plan if needed. When the plan is solid and ready to be executed, pass it to the Coder. 
-    Also make sure the plan includes the functions the Coder can call and the order in which they should be called.""",
+    Also make sure the plan includes the functions the Coder can call and the order in which they should be called.
+    The run_kusto_query function should be called first, then the query_usage_metrics function, also use get_log_tables_and_query and finally the save_results_to_csv function. 
+    """,
     description="I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. Let’s make sure each function is executed as planned. ",
     llm_config=llm_config,
     human_input_mode="TERMINATE"
@@ -107,15 +109,14 @@ coder = autogen.AssistantAgent(
     name="Code_Guru",
     system_message="""You are a helpful AI assistant. You are a highly experienced programmer specialized in Azure. 
     Follow the approved plan and save the code to disk. Always use functions you have access to and start with run_kusto_query, 
-    then the next function which is extract_resource_ids, and so on.
+    then the next function which is query_usage_metrics, and so on.
     The user cannot provide any other feedback or perform any other action beyond executing the code you suggest. 
     If the result indicates there is an error, fix the error and output the code again.
     Always use functions you have access to and start with run_kusto_query, 
-    then the next function which is query_usage_metrics, and then in the END use the save_results_to_csv function.
+    then the next function which is query_usage_metrics, and then query_log_analytics and in the END use the save_results_to_csv function.
     TERMINATE the conversation when the task is complete.""", 
     description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner` and before `UserProxy`.",
     llm_config={
-        "cache_seed": 0,
         "config_list": config_list,
         "temperature": 0
     },
@@ -254,7 +255,87 @@ register_function(
 
 
 
+from azure.identity import DefaultAzureCredential
+from azure.monitor.query import LogsQueryClient
+from typing import Optional, List, Dict
+from datetime import timedelta
+import logging
 
+# Initialize Logs Query Client with default Azure credentials
+credential = DefaultAzureCredential()
+logs_client = LogsQueryClient(credential)
+
+# Function to dynamically retrieve log tables and allow the agent to figure out the query
+def get_log_tables_and_query(
+    workspace_id: str,
+    resource_type: str,
+    metric: Optional[str] = None,
+    operation_name: Optional[str] = None
+) -> List[Dict]:
+    """
+    Retrieves log tables from Log Analytics and allows the agent to dynamically figure out the correct query based on the
+    available tables and resource type. After receiving the tables, the agent determines the correct KQL query to run.
+
+    Args:
+        workspace_id (str): The Log Analytics Workspace ID.
+        resource_type (str): The type of resource (e.g., 'storage_account', 'virtual_machine').
+        metric (Optional[str]): The specific metric to query (e.g., 'LastAccessTime'). Default is None.
+        operation_name (Optional[str]): The operation name to filter the query (e.g., 'GetBlob'). Default is None.
+
+    Returns:
+        List[Dict]: A list of results after querying the logs based on the agent's decision.
+    """
+
+    # Step 1: Query log tables from Log Analytics workspace
+    kusto_query_tables = """
+    union *
+    | summarize by Type
+    | where Type contains 'Logs'
+    | summarize by Type
+    """
+
+    try:
+        # Execute the query to get log tables
+        response_tables = logs_client.query_workspace(
+            workspace_id="fdd39622-ae5a-4eb8-987b-14ae8aad63dd",
+            query=kusto_query_tables,
+            timespan=(None, timedelta(days=30))  # Query logs for the last 30 days
+        )
+
+        if response_tables.status == 'Success':
+            available_tables = []
+            table = response_tables.tables[0]
+            for row in table.rows:
+                available_tables.append({"table_name": row[0]})  # Return all log tables
+
+            if not available_tables:
+                raise ValueError(f"No log tables available for resource type: {resource_type}")
+
+            # Step 2: Provide the available tables to the agent
+            logging.info(f"Available tables for {resource_type}: {available_tables}")
+
+            # At this point, the agent is expected to decide on the correct table and the query.
+            # This means the agent can choose from the list of tables and create a query based on the resource_type and the available tables.
+
+            # The agent will now construct the correct Kusto query for the required resource and metric based on the available tables.
+            return {"available_tables": available_tables}  # Let the agent decide the next step
+
+        else:
+            logging.error(f"Failed to retrieve log tables: {response_tables.error}")
+            return []
+
+    except Exception as e:
+        logging.error(f"Error retrieving log tables: {e}")
+        return []
+
+# Register the function that returns the available log tables for the agent to work with
+register_function(
+    get_log_tables_and_query,
+    caller=coder,
+    executor=user_proxy,
+    name="get_log_tables_and_query",
+    description="This function retrieves available log tables from Log Analytics and allows the agent to decide on the query."
+)
 
 # Define the function to save the results to a CSV file
 def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_results.csv") -> str:
