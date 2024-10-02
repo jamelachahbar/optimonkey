@@ -30,14 +30,15 @@ bing_api_key = os.getenv("BING_API_KEY")
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 42,
+    "cache_seed": 50,
     "timeout": 180
+    
 }
 
 subscription_id = ("38c26c07-ccce-4839-b504-cddac8e5b09d")
 threshold = 3
 days = 30
-
+workspace_id = "fdd39622-ae5a-4eb8-987b-14ae8aad63dd"
 resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines", 
              "Microsoft.Network/publicIPAddresses", "Microsoft.Network/networkInterfaces",
              "Microsoft.CognitiveServices", "Microsoft.DataFactory", "Microsoft.Databricks"]
@@ -68,34 +69,22 @@ planner = autogen.AssistantAgent(
     You plan the tasks and make sure everything is on track. Suggest a plan. 
     Revise the plan if needed. When the plan is solid and ready to be executed, pass it to the Coder. 
     Also make sure the plan includes the functions the Coder can call and the order in which they should be called.
-    The run_kusto_query function should be called first, then the query_usage_metrics function, also use get_log_tables_and_query and finally the save_results_to_csv function. 
+    The run_kusto_query function should be called first, then the query_usage_metrics function, and finally the save_results_to_csv function. 
     """,
     description=""" 
     I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. 
     Let’s make sure each function is executed as planned. If it is not, I will ask the coder to revise the plan. If it takes more than 3 tries, I'll ask the coder to write new code and not use the function.
     """,
     llm_config=llm_config,
-    human_input_mode="TERMINATE"
+    human_input_mode="NEVER"
 )
 
-def ask_planner(message):
-    """
-    Logs the message received from the planner agent.
-
-    Args:
-        message (str): Message to be logged.
-
-    Returns:
-        str: Response message from the planner.
-    """
-    logging.info(f"Planner received the following message: {message}")
-    return f"Planner response to: {message}"
 
 # Initialize the UserProxyAgent responsible for code execution
 user_proxy = autogen.UserProxyAgent(
     name="user_proxy",
     human_input_mode="TERMINATE",
-    system_message="You are a helpful AI Assistant. You are the user proxy. You can execute the code and interact with the system.",
+    system_message="You are a helpful AI Assistant. You are the user proxy. You can execute the code and interact with the system. When done, pass the results.",
     description="""User Proxy is a user who can execute the code and interact with the system. 
     I also check if the plan was applied and the output we have is according to the instructions. 
     If not, I will ask the planner to revise the plan. Make sure all the functions are called in the right order and the code is well structured and easy to understand. Also make sure there is an output and 
@@ -104,7 +93,8 @@ user_proxy = autogen.UserProxyAgent(
     code_execution_config={
         "work_dir": "coding",
         "use_docker": "python:3.10"
-    }
+    },
+    llm_config=llm_config
 )
 
 # Initialize the Code_Guru assistant for coding tasks
@@ -117,13 +107,13 @@ coder = autogen.AssistantAgent(
     If the result indicates there is an error, fix the error and output the code again.
     Always use functions you have access to and start with run_kusto_query, 
     then the next function which is query_usage_metrics, and then query_log_analytics and in the END use the save_results_to_csv function.
-    TERMINATE the conversation when the task is complete.""", 
+    """, 
     description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner` and before `UserProxy`.",
     llm_config={
         "config_list": config_list,
         "temperature": 0
     },
-    human_input_mode="TERMINATE"
+    human_input_mode="NEVER"
 )
 
 # Initialize the Critic assistant for code evaluation
@@ -244,9 +234,7 @@ def query_usage_metrics(
         ) / len(metric.timeseries) if metric.timeseries else 0
 
         resource_usage[metric_name] = average
-
     return resource_usage
-
 # Register the query usage metrics function
 register_function(
     query_usage_metrics,
@@ -256,89 +244,232 @@ register_function(
     description="This function allows the agent to Query Azure Monitor metrics for the specified resource and metrics."
 )
 
+# import requests
+
+# # Fetch Azure Retail Prices for Virtual Machines
+# # use annotation to specify the return type
+# def fetch_vm_pricing(location: str) -> List[Dict]:
+#     """
+#     Fetch Azure retail prices for Virtual Machines filtered by location.
+
+#     Args:
+#         location (str): The location to filter pricing data.
+
+#     Returns:
+#         List[Dict]: A list of pricing details for Virtual Machines filtered by the specified location.
+#     """
+#     # Update the API URL to include location filter
+#     url = f"https://prices.azure.com/api/retail/prices?$filter=serviceName eq 'Virtual Machines' and location eq '{location}'"
+    
+#     response = requests.get(url)
+    
+#     if response.status_code == 200:
+#         return response.json().get('Items', [
+#             {"productName": "No data available", "meterName": "No data available", "unitPrice": "No data available", "currencyCode": "No data available", "location": location}
+#         ])
+#     else:
+#         return []
+
+# # Register the function to fetch VM pricing
+# register_function(
+#     fetch_vm_pricing,
+#     caller=coder,
+#     executor=user_proxy,
+#     name="fetch_vm_pricing",
+#     description="This function fetches Azure retail prices for Virtual Machines."
+# )
+# # Function to fetch actual VM usage data from Azure Monitor
+# def fetch_vm_usage_data() -> List[Dict]:
+#     """
+#     Fetch actual VM usage data from Azure Monitor.
+
+#     Returns:
+#         List[Dict]: A list of VM usage data.
+#     """
+#     # Replace with actual Azure Monitor API endpoint and logic
+#     url = "https://management.azure.com/subscriptions/{subscription_id}/providers/Microsoft.Compute/virtualMachines?api-version=2021-07-01"
+#     headers = {
+#         "Authorization": "Bearer {access_token}",  # Replace with your token
+#         "Content-Type": "application/json"
+#     }
+
+#     response = requests.get(url, headers=headers)
+    
+#     if response.status_code == 200:
+#         # Extract relevant VM data
+#         vm_data = response.json().get('value', [])
+#         return [
+#             {"name": vm['name'], "usage": get_vm_usage(vm['id']), "region": vm['location']}
+#             for vm in vm_data
+#         ]
+#     else:
+#         return []
+
+# register_function(
+#     fetch_vm_usage_data,
+#     caller=coder,
+#     executor=user_proxy,
+#     name="fetch_vm_usage_data",
+#     description="This function fetches actual VM usage data from Azure Monitor."
+# )
+
+# def get_vm_usage(vm_id: str) -> int:
+#     """
+#     Fetch usage data for a specific VM.
+
+#     Args:
+#         vm_id (str): The ID of the VM.
+
+#     Returns:
+#         int: Usage value.
+#     """
+#     # Call your existing metrics query function
+#     usage_data = query_usage_metrics(vm_id)
+    
+#     # Assuming query_metrics returns a dictionary with a key 'usage'
+#     return usage_data.get('usage', 0)  # Return 0 if 'usage' key is not found
+
+# # Register the function to get VM usage data
+# register_function(
+#     get_vm_usage,
+#     caller=coder,
+#     executor=user_proxy,
+#     name="get_vm_usage",
+#     description="This function fetches usage data for a specific VM."
+# )
+# # Analyze and Compare VM usage data and use annotation to specify the return type
+# # Function to analyze and compare VM usage data with pricing data
+# def analyze_and_compare(vm_usage_data: List[Dict], pricing_data: List[Dict]) -> List[Dict]:
+#     """
+#     Analyze and compare VM usage data with pricing data to generate recommendations.
+
+#     Args:
+#         vm_usage_data (List[Dict]): VM usage data from Azure Monitor.
+#         pricing_data (List[Dict]): Pricing data for Virtual Machines.
+
+#     Returns:
+#         List[Dict]: A list of recommendations based on the analysis.
+#     """
+#     recommendations = []
+    
+#     for vm in vm_usage_data:
+#         vm_name = vm['name']
+#         region = vm['region']  # Assuming the region is part of the VM usage data
+#         # Find the corresponding pricing for the specific VM in that region
+#         pricing_for_vm = [p for p in pricing_data if p['location'] == region]
+        
+#         # Implement your logic to create recommendations based on pricing data
+#         recommendation = f"Pricing details for {vm_name} in {region}: {pricing_for_vm}"  # Customize this as needed
+        
+#         recommendations.append({'vm_name': vm_name, 'recommendation': recommendation})
+
+#     return recommendations
 
 
-from azure.identity import DefaultAzureCredential
-from azure.monitor.query import LogsQueryClient
-from typing import Optional, List, Dict
-from datetime import timedelta
-import logging
+# # Register the function to analyze and compare VM usage data
+# register_function(
+#     analyze_and_compare,
+#     caller=coder,
+#     executor=user_proxy,
+#     name="analyze_and_compare",
+#     description="This function analyzes and compares VM usage data with pricing data to generate recommendations."
+# )
 
-# Initialize Logs Query Client with default Azure credentials
-credential = DefaultAzureCredential()
-logs_client = LogsQueryClient(credential)
+# from azure.identity import DefaultAzureCredential
+# from azure.monitor.query import LogsQueryClient
+# from typing import Optional, List, Dict
+# from datetime import timedelta
+# import logging
 
-# Function to dynamically retrieve log tables and allow the agent to figure out the query
-def get_log_tables_and_query(
-    workspace_id: str,
-    resource_type: str,
-    metric: Optional[str] = None,
-    operation_name: Optional[str] = None
-) -> List[Dict]:
-    """
-    Retrieves log tables from Log Analytics and allows the agent to dynamically figure out the correct query based on the
-    available tables and resource type. After receiving the tables, the agent determines the correct KQL query to run.
+# # Initialize Logs Query Client with default Azure credentials
+# credential = DefaultAzureCredential()
+# logs_client = LogsQueryClient(credential)
 
-    Args:
-        workspace_id (str): The Log Analytics Workspace ID.
-        resource_type (str): The type of resource (e.g., 'storage_account', 'virtual_machine').
-        metric (Optional[str]): The specific metric to query (e.g., 'LastAccessTime'). Default is None.
-        operation_name (Optional[str]): The operation name to filter the query (e.g., 'GetBlob'). Default is None.
+# # Function to dynamically retrieve log tables and allow the agent to figure out the query
+# def get_log_tables(workspace_id: str) -> List[str]:
+#     """
+#     Retrieves log tables from Log Analytics workspace.
 
-    Returns:
-        List[Dict]: A list of results after querying the logs based on the agent's decision.
-    """
+#     Args:
+#         workspace_id (str): The Log Analytics Workspace ID.
 
-    # Step 1: Query log tables from Log Analytics workspace
-    kusto_query_tables = """
-    union *
-    | summarize by Type
-    | where Type contains 'Logs'
-    | summarize by Type
-    """
+#     Returns:
+#         List[str]: A list of available log table names.
+#     """
+#     kusto_query_tables = """
+#     union *
+#     | summarize by Type
+#     | where Type contains 'Logs'
+#     | summarize by Type
+#     """
 
-    try:
-        # Execute the query to get log tables
-        response_tables = logs_client.query_workspace(
-            workspace_id="fdd39622-ae5a-4eb8-987b-14ae8aad63dd",
-            query=kusto_query_tables,
-            timespan=(None, timedelta(days=30))  # Query logs for the last 30 days
-        )
+#     try:
+#         # Execute the query to get log tables
+#         response_tables = logs_client.query_workspace(
+#             workspace_id=workspace_id,
+#             query=kusto_query_tables,
+#             timespan=(None, timedelta(days=30))  # Query logs for the last 30 days
+#         )
 
-        if response_tables.status == 'Success':
-            available_tables = []
-            table = response_tables.tables[0]
-            for row in table.rows:
-                available_tables.append({"table_name": row[0]})  # Return all log tables
+#         if response_tables.status == 'Success':
+#             available_tables = [row[0] for row in response_tables.tables[0].rows]
+#             logging.info(f"Available tables for workspace {workspace_id}: {available_tables}")
+#             return available_tables  # Return only the names of the tables
 
-            if not available_tables:
-                raise ValueError(f"No log tables available for resource type: {resource_type}")
+#         else:
+#             logging.error(f"Failed to retrieve log tables: {response_tables.error}")
+#             return []
 
-            # Step 2: Provide the available tables to the agent
-            logging.info(f"Available tables for {resource_type}: {available_tables}")
+#     except Exception as e:
+#         logging.error(f"Error retrieving log tables: {e}")
+#         return []
 
-            # At this point, the agent is expected to decide on the correct table and the query.
-            # This means the agent can choose from the list of tables and create a query based on the resource_type and the available tables.
+# # Register the function that returns the available log tables for the agent to work with
+# register_function(
+#     get_log_tables,  
+#     caller=coder,
+#     executor=user_proxy,
+#     name="get_log_tables",
+#     description="This function retrieves available log tables from Log Analytics and allows the agent to decide on the query."
+# )
+# def query_logs(workspace_id: str, table_name: str, query: str) -> List[Dict]:
+#     """
+#     Queries logs from a specific log table in Log Analytics.
 
-            # The agent will now construct the correct Kusto query for the required resource and metric based on the available tables.
-            return {"available_tables": available_tables}  # Let the agent decide the next step
+#     Args:
+#         workspace_id (str): The Log Analytics Workspace ID.
+#         table_name (str): The specific log table to query.
+#         query (str): The KQL query to execute.
 
-        else:
-            logging.error(f"Failed to retrieve log tables: {response_tables.error}")
-            return []
+#     Returns:
+#         List[Dict]: A list of results from the log query.
+#     """
+#     try:
+#         response_logs = logs_client.query_workspace(
+#             workspace_id=workspace_id,
+#             query=query,
+#             timespan=(None, timedelta(days=30))  # Query logs for the last 30 days
+#         )
 
-    except Exception as e:
-        logging.error(f"Error retrieving log tables: {e}")
-        return []
+#         if response_logs.status == 'Success':
+#             logging.info(f"Successfully queried logs from table {table_name}")
+#             return response_logs.tables[0].rows  # Assuming rows are returned as a list of dictionaries
 
-# Register the function that returns the available log tables for the agent to work with
-register_function(
-    get_log_tables_and_query,
-    caller=coder,
-    executor=user_proxy,
-    name="get_log_tables_and_query",
-    description="This function retrieves available log tables from Log Analytics and allows the agent to decide on the query."
-)
+#         else:
+#             logging.error(f"Failed to query logs: {response_logs.error}")
+#             return []
+
+#     except Exception as e:
+#         logging.error(f"Error querying logs: {e}")
+#         return []
+
+# register_function(
+#     query_logs,
+#     caller=coder,
+#     executor=user_proxy,
+#     name="query_logs",
+#     description="This function queries logs from a specific log table in Log Analytics."
+# )
 
 # Define the function to save the results to a CSV file
 def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_results.csv") -> str:
@@ -391,9 +522,8 @@ register_function(
 groupchat = autogen.GroupChat(
     agents=[planner, coder, critic, user_proxy], 
     messages=[],  
-    max_round=100,
-    speaker_selection_method="round_robin"
-)
+    max_round=400,
+    speaker_selection_method="round_robin")
 
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
@@ -421,14 +551,13 @@ def start_agent_conversation(prompt: Optional[str] = None):
 
         The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
         to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
-        extracting resource IDs, querying usage metrics, and saving results to a CSV file.
+        querying usage metrics, getting log tables and querying these tables and saving results to a CSV file.
         The Critic will evaluate the quality of the code and provide a score from 1 to 10.
 
         # Task:
         Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
         Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
-        Do not run the analyze resources and query metrics function first. 
-        You should start with run kusto query then extract resource id then query metrics,... 
+        You should start with run kusto query then,then query metrics,... 
         Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
         Provide advice on what to do with this information and output it along with the results in the CSV file.
         Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
@@ -440,8 +569,12 @@ def start_agent_conversation(prompt: Optional[str] = None):
     # Start the conversation with the user proxy
     user_proxy.initiate_chat(
         manager,
-        message=prompt  # Use the provided prompt
+        message=prompt, # Use the provided prompt
+        max_round=50,
+        # summary_method="reflection_with_llm"
     )
+
+
     
     # Collect the conversation messages
     conversation = []

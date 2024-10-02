@@ -1,0 +1,6 @@
+Storage Account,Used Capacity (bytes),Recommendation
+czoiuoiuoiuoiuoui,910973,Consider decommissioning
+mgmtbadc,146430984967,Evaluate tier and access policies
+stgaccttest123654,45092181,Consider lower tier or decommissioning
+finopshub0275wqmmubtdx2s,3482940926844,High usage; no immediate action
+mgmtbdaa,6440427718738,High usage; no immediate action

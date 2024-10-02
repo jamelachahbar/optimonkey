@@ -1,0 +1,6 @@
+StorageAccountID,UsedCapacity,Recommendation
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/cloud-shell-storage-westeurope/providers/Microsoft.Storage/storageAccounts/czoiuoiuoiuoiuoui,912240.0,Consider downsizing or de-allocating to reduce costs.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/stgaccttest123654,45100086.0,Consider downsizing or de-allocating to reduce costs.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/mgmtbadc,146637102222.0,Consider downsizing or de-allocating to reduce costs.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/mgmtbdaa,6447005896017.0,Consider downsizing or de-allocating to reduce costs.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/finops-hub021/providers/Microsoft.Storage/storageAccounts/finopshub0275wqmmubtdx2s,3485643469440.0,Consider downsizing or de-allocating to reduce costs.

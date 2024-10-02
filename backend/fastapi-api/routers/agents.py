@@ -31,3 +31,17 @@ async def download_recommendations():
     if os.path.exists(csv_file_path):
         return Response(open(csv_file_path, "rb").read(), media_type="text/csv")
     return {"error": "CSV file not found"}
+    
+# Define a Pydantic model for receiving the message data
+class MessageInput(BaseModel):
+    message: str
+
+# Define the /send-message route
+@router.post("/send-message")
+async def send_message(message_input: MessageInput):
+    # Pass the message to the start_agent_conversation function
+    try:
+        conversation = start_agent_conversation(message_input.message)  # Call your autogen conversation function
+        return {"conversation": conversation}  # Return the updated conversation as JSON
+    except Exception as e:
+        return {"error": str(e)}
