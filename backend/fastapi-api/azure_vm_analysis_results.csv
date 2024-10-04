@@ -1,6 +1,6 @@
 vm_name,cpu_usage,network_usage,disk_usage,recommendation
 VM-LINUX-01,1.3%,Moderate,Moderate,Downgrade VM size or reduce provisioning.
+vmwithhibernationmode,23.5%,Moderate,Moderate,Review VM size and performance needs.
 vm-forcedetachdemo1-1,0%,None,None,Consider deactivating unused VMs.
 vm-forcedetachdemo1-2,0%,None,None,Consider deactivating unused VMs.
-vmacoademospot,0.88%,Low,Moderate,Downgrade VM size or reduce provisioning.
-vmtest,0.91%,Low,Moderate,Downgrade VM size or reduce provisioning.
+vmacoademospot,0.88%,Low,Low,Downgrade VM size or reduce provisioning.

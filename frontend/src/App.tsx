@@ -11,7 +11,7 @@ import { MoonIcon, SunIcon } from '@chakra-ui/icons'; // Importing icons for col
 const queryClient = new QueryClient();
 
 const App: React.FC = () => {
-  const { colorMode, toggleColorMode } = useColorMode();
+  // const { colorMode, toggleColorMode } = useColorMode();
 
   return (
     <QueryClientProvider client={queryClient}>

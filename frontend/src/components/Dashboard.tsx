@@ -10,17 +10,15 @@ import {
   useToast,
   Avatar,
   Textarea,
-  Grid,
   useDisclosure,
   useColorMode,
   useColorModeValue,
 } from '@chakra-ui/react';
-import { MoonIcon, SunIcon } from '@chakra-ui/icons'; // Importing icons for color mode
+import { MoonIcon, SunIcon } from '@chakra-ui/icons';
 import { useMutation } from '@tanstack/react-query';
 import axios from 'axios';
 import PromptTemplate from './PromptTemplate';
 
-// Define the type for each message in the conversation
 interface Message {
   content: string;
   role: string;
@@ -28,26 +26,66 @@ interface Message {
   timestamp?: string;
 }
 
-interface ConversationResponse {
-  conversation: Message[];
-  error?: string;
-}
-
 const Dashboard: React.FC = () => {
   const [userMessage, setUserMessage] = useState<string>('');
   const [conversation, setConversation] = useState<Message[]>([]);
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [eventSource, setEventSource] = useState<EventSource | null>(null);
+  const { isOpen, onClose } = useDisclosure();
   const toast = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { toggleColorMode, colorMode } = useColorMode(); // Added colorMode here
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const [isSending, setIsSending] = useState(false); // State to control spinner and textarea disabling
+  const { toggleColorMode, colorMode } = useColorMode();
+  const bgColor = useColorModeValue('gray.100', 'gray.800');
+  const API_BASE_URL = 'http://localhost:8081/api';
 
-  // React Query - Mutation to start agents with default prompt
-  const startAgentsMutation = useMutation<ConversationResponse, Error, void>({
-    mutationFn: () => axios.post('/api/start-agents').then((res) => res.data),
-    onSuccess: (data) => {
-      setConversation(data.conversation);
+  // Helper function to start SSE conversation stream
+  const startStreamingConversation = (url: string) => {
+    if (eventSource) {
+      eventSource.close();
+    }
+
+    const source = new EventSource(url);
+    setEventSource(source);
+
+    source.onmessage = (event) => {
+      try {
+        const messageData = JSON.parse(event.data);
+        console.log("Received message from backend:", messageData);
+        if (messageData.content && messageData.content.toLowerCase().includes('chat ended')) {
+          source.close();
+          setEventSource(null);  // Clear the EventSource after it closes
+        } else {
+          setConversation((prev) => [...prev, messageData]);
+        }
+      } catch (error) {
+        console.error('Error parsing message:', error);
+      }
+    };
+    
+    source.onerror = (error) => {
+      console.error('Error with SSE:', error);
+      source.close();
+    };
+    
+    source.onerror = (error) => {
+      console.error('Error with SSE:', error);
+      source.close();
+    };
+  };
+
+  // Mutation to start agents and begin conversation stream
+  // Start agents mutation
+  const startAgentsMutation = useMutation<void, Error, void>({
+    mutationFn: () => axios.post(`/api/start-agents`).then((res) => res.data),
+    onMutate: () => {
+      toast({
+        title: 'Starting agents...',
+        status: 'info',
+        duration: 2000,
+        isClosable: true,
+      });
+    },
+    onSuccess: () => {
+      startStreamingConversation('http://localhost:8081/api/stream-conversation');
       toast({
         title: 'Agents Started',
         description: 'Agents have started with the default prompt.',
@@ -67,24 +105,24 @@ const Dashboard: React.FC = () => {
     },
   });
 
-  // React Query - Mutation to send a message
-  const sendMessageMutation = useMutation<ConversationResponse, Error, string>({
-    mutationFn: (message: string) =>
-      axios.post('/api/send-message', { message }).then((res) => res.data),
-    onSuccess: (data) => {
-      setConversation((prev) => [...prev, ...data.conversation]);
-      setIsSending(false); // Re-enable textarea
-      onClose(); // Hide the prompt template and start button after sending a message
-      toast({
-        title: 'Message Sent',
-        description: 'Your message was successfully sent to the agents.',
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
+
+  // Mutation to send a message
+  const sendMessageMutation = useMutation<void, Error, string>({
+    mutationFn: (message: string) => axios.post(`/api/send-message`, { message }).then((res) => res.data),
+    onMutate: () => {
+      const newMessage: Message = {
+        content: userMessage,
+        role: 'user',
+        name: 'You',
+        timestamp: new Date().toLocaleTimeString(),
+      };
+      setConversation((prev) => [...prev, newMessage]);
+    },
+    onSuccess: () => {
+      setUserMessage(''); // Clear user input after message is sent
     },
     onError: () => {
-      setIsSending(false); // Re-enable textarea
+      
       toast({
         title: 'Error',
         description: 'There was an error sending the message.',
@@ -97,49 +135,26 @@ const Dashboard: React.FC = () => {
 
   const sendMessage = () => {
     if (userMessage.trim() === '') return;
-    const newMessage: Message = {
-      content: userMessage,
-      role: 'user',
-      name: 'You',
-      timestamp: new Date().toLocaleTimeString(),
-    };
-    setConversation((prev) => [...prev, newMessage]);
-    setIsSending(true); // Disable textarea and show spinner
     sendMessageMutation.mutate(userMessage);
-    setUserMessage('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '48px'; // Reset to initial height
-    }
   };
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setUserMessage(e.target.value);
-    e.target.style.height = 'auto';
-    e.target.style.height = `${e.target.scrollHeight}px`;
+    e.target.style.height = 'auto'; // Reset textarea height
+    e.target.style.height = `${e.target.scrollHeight}px`; // Adjust based on content
   };
 
+  // Handle selection from the prompt template
   const handlePromptSelection = (prompt: string) => {
-    setUserMessage(prompt); // Automatically set the selected prompt into the input box
-    sendMessage(); // Send the selected prompt as a message
+    setUserMessage(prompt);
+    sendMessage(); // Automatically send the selected prompt
   };
 
   return (
     <Flex h="100vh" direction="column">
-      {/* Sidebar */}
       <Flex direction="row" flex="1">
-        <Box
-          w={{ base: '20%', md: '15%' }}
-          bg={bgColor}
-          p={4}
-          display="flex"
-          flexDirection="column"
-          alignItems="flex-start"
-          justifyContent="space-between"
-          borderRight="1px solid #e2e8f0"
-        >
-          <Heading size="sm" mb={6}>
-            Home
-          </Heading>
+        <Box w={{ base: '20%', md: '15%' }} bg={bgColor} p={4} borderRight="1px solid #e2e8f0">
+          <Heading size="sm" mb={6}>Home</Heading>
           <VStack align="stretch" spacing={4}>
             <Button variant="link">Model Catalog</Button>
             <Button variant="link">Model Benchmarks</Button>
@@ -148,102 +163,52 @@ const Dashboard: React.FC = () => {
           </VStack>
         </Box>
 
-        {/* Main Content Area */}
         <Box w={{ base: '80%', md: '85%' }} p={6} position="relative" flex="1">
           <Flex justifyContent="space-between" alignItems="center" mb={6}>
-            {/* Start Agents and Color Mode Toggle */}
             <Flex alignItems="center">
               <Button
                 mr={4}
                 colorScheme="teal"
                 onClick={() => startAgentsMutation.mutate()}
-                disabled={startAgentsMutation.isPending}
+                disabled={startAgentsMutation.isLoading}
               >
-                {startAgentsMutation.isPending ? (
-                  <>
-                    <Spinner size="sm" mr={2} /> Running Agents...
-                  </>
-                ) : (
-                  'Start Agents'
-                )}
+                {startAgentsMutation.isLoading ? <><Spinner size="sm" mr={2} /> Running Agents...</> : 'Start Agents'}
               </Button>
-              {/* Color Mode Toggle */}
               <Button onClick={toggleColorMode}>
                 {colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
               </Button>
             </Flex>
-            <Heading as="h3" size="lg">
-              OptiMonkey Dashboard
-            </Heading>
+            <Heading as="h3" size="lg">OptiMonkey Dashboard</Heading>
           </Flex>
 
-          {/* Cards Section */}
           {!isOpen && (
             <Box mb={6}>
               <PromptTemplate onSelectPrompt={handlePromptSelection} />
             </Box>
           )}
 
-          {/* Conversation and Chatbox */}
-          <Box
-            flex="1"
-            overflowY="auto"
-            borderRadius="md"
-            p={4}
-            mt={4}
-            bg="transparent"
-            maxH="60vh"
-            width="80%"
-            mx="auto"
-            sx={{
-              '::-webkit-scrollbar': { width: '6px' },
-              '::-webkit-scrollbar-thumb': { background: '#ccc', borderRadius: '6px' },
-            }}
-          >
-            <VStack spacing={4} align="stretch">
-              {conversation.map((msg, index) => (
-                <Flex
-                  key={index}
-                  alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
-                  bg={msg.role === 'user' ? 'blue.100' : 'green.100'}
-                  borderRadius={msg.role === 'user' ? '20px 20px 0 20px' : '20px 20px 20px 0'}
-                  p={3}
-                  boxShadow="md"
-                  maxWidth="80%"
-                  flexDir="row"
-                  alignItems="center"
-                  fontSize="sm"
-                >
-                  {msg.role !== 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />}
-                  <Box>
-                    <Text fontWeight="bold" mb={1}>
-                      {msg.name} {msg.timestamp ? `• ${msg.timestamp}` : ''}
-                    </Text>
-                    <Text whiteSpace="pre-wrap" wordBreak="break-word">
-                      {msg.content}
-                    </Text>
-                  </Box>
-                  {msg.role === 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" ml={2} />}
-                </Flex>
-              ))}
-            </VStack>
+          <Box flex="1" overflowY="auto" p={4} mt={4} maxH="60vh">
+            {conversation.length > 0 ? (
+              <VStack spacing={4} align="stretch">
+                {conversation.map((msg, index) => (
+                  <Flex key={index} alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'} p={3} boxShadow="md" maxWidth="80%" flexDir="row" alignItems="center">
+                    {msg.role !== 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />}
+                    <Box>
+                      <Text fontWeight="bold">{msg.name} {msg.timestamp ? `• ${msg.timestamp}` : ''}</Text>
+                      <Text whiteSpace="pre-wrap">{msg.content}</Text>
+                    </Box>
+                    {msg.role === 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" ml={2} />}
+                  </Flex>
+                ))}
+              </VStack>
+            ) : (
+              <Text>No conversation yet</Text>
+            )}
           </Box>
         </Box>
       </Flex>
 
-      {/* Input box for sending a message */}
-      <Box
-        mt={4}
-        width="100%"
-        display="flex"
-        alignItems="center"
-        position="fixed"
-        bottom={0}
-        left={0}
-        p={4}
-        bg={bgColor}
-        boxShadow="md"
-      >
+      <Box mt={4} width="100%" display="flex" alignItems="center" position="sticky" bottom={0} left={0} p={4} bg={bgColor}>
         <Box flex="1" maxW="60%" mx="auto" display="flex" alignItems="center">
           <Textarea
             ref={textareaRef}
@@ -252,22 +217,16 @@ const Dashboard: React.FC = () => {
             placeholder="Type your message..."
             size="md"
             resize="none"
-            overflowY="auto"
-            maxH={200}
+            maxH="200px"
             minH="50px"
             mr={2}
-            disabled={isSending} // Disable when sending a message
+            bg="transparent"
+            border="1px solid"
+            borderColor={colorMode === 'light' ? 'gray.300' : 'gray.600'}
+            disabled={sendMessageMutation.isLoading || startAgentsMutation.isLoading}
           />
-          <Button
-            colorScheme="teal"
-            onClick={sendMessage}
-            disabled={sendMessageMutation.isPending || isSending}
-          >
-            {sendMessageMutation.isPending || isSending ? (
-              <Spinner size="sm" />
-            ) : (
-              'Send'
-            )}
+          <Button colorScheme="teal" onClick={sendMessage} disabled={sendMessageMutation.isLoading || startAgentsMutation.isLoading}>
+            {sendMessageMutation.isLoading ? <Spinner size="sm" /> : 'Send'}
           </Button>
         </Box>
       </Box>

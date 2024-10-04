@@ -1,6 +1,6 @@
-Storage Account,Used Capacity (bytes),Recommendation
-czoiuoiuoiuoiuoui,910973,Consider decommissioning
-mgmtbadc,146430984967,Evaluate tier and access policies
-stgaccttest123654,45092181,Consider lower tier or decommissioning
-finopshub0275wqmmubtdx2s,3482940926844,High usage; no immediate action
-mgmtbdaa,6440427718738,High usage; no immediate action
+Name,Usage,Recommendation
+czoiuoiuoiuoiuoui,0.9 MB,Consider deletion if obsolete or archive
+stgaccttest123654,45.4 MB,Verify purpose and potentially delete or archive
+mgmtbadc,136.6 GB,"Monitor closely, optimize data"
+finopshub0275wqmmubtdx2s,3.5 TB,Optimize data storage strategy
+mgmtbdaa,6.4 TB,Implement tiered storage

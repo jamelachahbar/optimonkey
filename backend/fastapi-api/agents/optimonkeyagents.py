@@ -30,7 +30,7 @@ bing_api_key = os.getenv("BING_API_KEY")
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 50,
+    "cache_seed": 42,
     "timeout": 180
     
 }
@@ -61,59 +61,40 @@ resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines",
 # Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
 # """
 
+# Initialize the Admin
+user_proxy = autogen.UserProxyAgent(
+    name="admin",
+    human_input_mode='ALWAYS',
+    system_message='Give the task and send instruction to the critic to evaluate and refine the code.',
+    code_execution_config=False,
+    # llm_config=llm_config
+)
 
 # Initialize the Planner assistant
 planner = autogen.AssistantAgent(
     name="Planner",
-    system_message="""You are a helpful AI Assistant. You are the planner of this team of assistants. 
-    You plan the tasks and make sure everything is on track. Suggest a plan. 
-    Revise the plan if needed. When the plan is solid and ready to be executed, pass it to the Coder. 
-    Also make sure the plan includes the functions the Coder can call and the order in which they should be called.
-    The run_kusto_query function should be called first, then the query_usage_metrics function, and finally the save_results_to_csv function. 
+    system_message="""
+    Given a task, please determine what information is needed to complete the task, how to obtain that information, and what steps are required to complete the task.
+    Please note that the information will all be retrieved using Python and Azure SDKs.
+    Please only suggest information that is relevant to the task and ensure that the information is accurate and up-to-date.
+    Make sure the information can be retrieved using the functions provided and Python code.
+    After each step is completed by others, check the progress and make sure the next step is executed correctly.
+    If a step fails, try to identify the issue and suggest a solution or a workaround.
     """,
     description=""" 
-    I am the planner of the team. I plan the tasks and make sure everything is on track. If needed, we should reassess the initial collection of metrics to confirm accuracy and completeness. 
-    Let’s make sure each function is executed as planned. If it is not, I will ask the coder to revise the plan. If it takes more than 3 tries, I'll ask the coder to write new code and not use the function.
+    Given a task, please determine what information is needed to complete the task, how to obtain that information, 
+    and what steps are required to complete the task. After each step is completed by others, 
+    check the progress and make sure the next step is executed correctly.
     """,
-    llm_config=llm_config,
-    human_input_mode="NEVER"
-)
-
-
-# Initialize the UserProxyAgent responsible for code execution
-user_proxy = autogen.UserProxyAgent(
-    name="user_proxy",
-    human_input_mode="TERMINATE",
-    system_message="You are a helpful AI Assistant. You are the user proxy. You can execute the code and interact with the system. When done, pass the results.",
-    description="""User Proxy is a user who can execute the code and interact with the system. 
-    I also check if the plan was applied and the output we have is according to the instructions. 
-    If not, I will ask the planner to revise the plan. Make sure all the functions are called in the right order and the code is well structured and easy to understand. Also make sure there is an output and 
-    the output is according to the instructions. Make sure there sis a CSV file with the results.""",
-    max_consecutive_auto_reply=3,
-    code_execution_config={
-        "work_dir": "coding",
-        "use_docker": "python:3.10"
-    },
     llm_config=llm_config
-)
+    )
+
 
 # Initialize the Code_Guru assistant for coding tasks
-coder = autogen.AssistantAgent(
+coder = autogen.ConversableAgent(
     name="Code_Guru",
-    system_message="""You are a helpful AI assistant. You are a highly experienced programmer specialized in Azure. 
-    Follow the approved plan and save the code to disk. Always use functions you have access to and start with run_kusto_query, 
-    then the next function which is query_usage_metrics, and so on.
-    The user cannot provide any other feedback or perform any other action beyond executing the code you suggest. 
-    If the result indicates there is an error, fix the error and output the code again.
-    Always use functions you have access to and start with run_kusto_query, 
-    then the next function which is query_usage_metrics, and then query_log_analytics and in the END use the save_results_to_csv function.
-    """, 
-    description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner` and before `UserProxy`.",
-    llm_config={
-        "config_list": config_list,
-        "temperature": 0
-    },
-    human_input_mode="NEVER"
+    description="Write code based on the plan provided by the planner.",
+    llm_config=llm_config
 )
 
 # Initialize the Critic assistant for code evaluation
@@ -132,8 +113,19 @@ Do not suggest code.
 Finally, based on the critique above, suggest a concrete list of actions that the coder should take to improve the code.
 Do not come up with a plan or suggest a code. You can only critique the code.
 Make sure the Coder uses the functions in the right order and the code is well structured and easy to understand.""",
-    llm_config=llm_config,
-    human_input_mode="NEVER"
+    llm_config=llm_config
+    )
+
+code_executor = autogen.UserProxyAgent(
+    name="Executor",
+    description="Execute the code provided by the coder and provide the results.",
+    human_input_mode="NEVER",
+    code_execution_config={
+        "last_n_messages": 3,
+        "work_dir": "coding",
+        "use_docker": False,
+    },
+    llm_config=llm_config
 )
 
 # Define the Kusto Query Function
@@ -159,7 +151,7 @@ def run_kusto_query(query: Annotated[str, "The KQL query"], subscriptions: Annot
 register_function(
     run_kusto_query,
     caller=coder,
-    executor=user_proxy,
+    executor=code_executor,
     name="run_kusto_query",
     description="This function generates the code to run a Kusto Query Language (KQL) query using Azure Resource Graph."
 )
@@ -218,7 +210,6 @@ def query_usage_metrics(
         metricnames=','.join(metric_names),
         aggregation=aggregation
     )
-
     resource_usage = {"resource_id": resource_id}
 
     # Calculate average usage for each metric and append to resource usage
@@ -239,7 +230,7 @@ def query_usage_metrics(
 register_function(
     query_usage_metrics,
     caller=coder,
-    executor=user_proxy,
+    executor=code_executor,
     name="query_usage_metrics",
     description="This function allows the agent to Query Azure Monitor metrics for the specified resource and metrics."
 )
@@ -513,25 +504,80 @@ def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_res
 register_function(
     save_results_to_csv,
     caller=coder,
-    executor=user_proxy,
+    executor=code_executor,
     name="save_results_to_csv",
     description="A tool to save results to CSV."
 )
 
+
+
+from guidance import select
+import guidance
+# Initialize the LLM model using guidance
+lm = guidance.models._azure_openai.AzureOpenAI(
+    model="gpt-4o-mini",
+    azure_endpoint="https://oai-jml.openai.azure.com",
+    api_key="5060bfdd7cbf48789d6ab72e350dc40f",
+    version="2024-07-18"
+)
+
+@guidance
+def validate_azure_cost_optimization_prompt(prompt: str) -> bool:
+    """
+    Validates the prompt for Azure cost optimization using the guidance framework.
+    """
+    try:
+        # Define a guidance task using gen and select
+        task = f"""
+        Help me with the following task:
+        {{prompt}}
+        Let's pick: should we write out our STEPS first or can we directly ANSWER the question?
+        """
+        
+        # Make sure to format the task correctly for guidance and execute the model
+        formatted_task = task.format(prompt=prompt)
+        result = lm(formatted_task)  # Removed prompt as second argument
+
+        # Log the result for debugging purposes
+        print(f"Guidance result: {result}")
+
+        # Process the user's choice
+        choice = select(["STEPS", "ANSWER"], name="choice")
+        print(f"User choice: {choice}")
+
+        # Basic validation: check if "Azure" and "cost" or "optimization" are in the prompt
+        if "Azure" in prompt.lower() and ("cost" in prompt.lower() or "optimization" in prompt.lower()):
+            print("Prompt is valid for Azure cost optimization.")
+            return True  # Valid prompt for Azure cost optimization
+
+    except Exception as e:
+        print(f"Validation error: {e}")
+        return False
+
+    print("Prompt is not valid for Azure cost optimization.")
+    return False
+
+
+
 # Initialize GroupChat with the agents
 groupchat = autogen.GroupChat(
-    agents=[planner, coder, critic, user_proxy], 
+    agents=[planner, coder, critic, user_proxy, code_executor], 
     messages=[],  
-    max_round=400,
+    max_round=20,
     speaker_selection_method="round_robin")
 
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
-# Define the function to start the agent conversation
-def start_agent_conversation(prompt: Optional[str] = None):
+
+
+import json
+async def start_agent_conversation_stream(prompt: Optional[str] = None):
     """
     Starts the agent conversation with the option to use a custom prompt.
     """
+    global chat_status  # Track the chat status globally
+    chat_status = "Chat ongoing"  # Set chat status as ongoing
+
     # Use default prompt if none is provided
     if not prompt:
         prompt = f"""
@@ -565,27 +611,110 @@ def start_agent_conversation(prompt: Optional[str] = None):
         Make sure there is a CSV file with the results.
         Make sure we only have top 5 recommendations.
         """
-    
-    # Start the conversation with the user proxy
-    user_proxy.initiate_chat(
-        manager,
-        message=prompt, # Use the provided prompt
-        max_round=50,
-        # summary_method="reflection_with_llm"
-    )
+        
+    print(f"Starting conversation with prompt: {prompt}")  # Log the prompt
 
-
-    
-    # Collect the conversation messages
-    conversation = []
-    for message in manager.groupchat.messages:
-        msg_content = {
-            "content": message.get("content", ""),
-            "role": message.get("role", ""),
-            "name": message.get("name", ""),
+    # Validate the prompt for Azure cost optimization using guidance
+    if not validate_azure_cost_optimization_prompt(prompt):
+        error_message = {
+            "content": "The prompt is not related to Azure cost optimization.",
+            "role": "system",
+            "name": "Error",
             "timestamp": datetime.now().strftime("%H:%M:%S"),
         }
-        conversation.append(msg_content)
+        print("Validation failed: Prompt not related to Azure cost optimization.")
+        yield json.dumps(error_message)
+        return  # Stop execution if the prompt is invalid
+
+    print("Validation succeeded. Starting group chat with agents.")
     
-    return conversation
+    # If validation is successful, start the group chat
+    try:
+        # Start the conversation with the user proxy
+        user_proxy.initiate_chat(
+            manager,
+            message=prompt,  # Use the provided prompt
+            max_round=50,
+        )
+
+        # Collect the conversation messages to be streamed live as they are generated
+        for message in manager.groupchat.messages:
+            print(f"Streaming message: {message}")  # Log each message
+            msg_content = {
+                "content": message.get("content"),  # Extract the message content from the message dict
+                "role": message.get("role"),
+                "name": message.get("name"),
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+            }
+            yield json.dumps(msg_content)
+    
+    except Exception as e:
+        error_message = {
+            "content": f"An error occurred: {str(e)}",
+            "role": "system",
+            "name": "Error",
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+        }
+        print(f"Error during agent conversation: {e}")
+        yield json.dumps(error_message)
+
+# Define the function to start the agent conversation
+# def start_agent_conversation_stream(prompt: Optional[str] = None):
+#     """
+#     Starts the agent conversation with the option to use a custom prompt.
+#     """
+#     # Use default prompt if none is provided
+#     if not prompt:
+#         prompt = f"""
+#         You are a professional Azure consultant.
+#         Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
+        
+#         # Objective:
+#         # Your goal is to provide the user with a smooth, efficient and friendly experience by either providing proof data and metrics to justify the list of recommendations 
+#         and by providing advice on what to do with the information.
+        
+#         # Tools: Azure Resource Graph, Azure Monitor, Azure SDKs.
+#         You have a team of assistants to help you with the task. The agents are: Planner, Coder, Critic, and User Proxy.
+#         # Planner: Plans the tasks and makes sure everything is on track.
+#         # Coder: Writes the code to analyze the Azure environment and save the results to a CSV file.
+#         # Critic: Evaluates the quality of the code and provides a score from 1 to 10.
+#         # User Proxy: Executes the code and interacts with the system.
+
+#         The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
+#         to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
+#         querying usage metrics, getting log tables and querying these tables and saving results to a CSV file.
+#         The Critic will evaluate the quality of the code and provide a score from 1 to 10.
+
+#         # Task:
+#         Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
+#         Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
+#         You should start with run kusto query then,then query metrics,... 
+#         Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
+#         Provide advice on what to do with this information and output it along with the results in the CSV file.
+#         Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
+#         Make sure you use the functions in the right order and the code is well structured and easy to understand.
+#         Make sure there is a CSV file with the results.
+#         Make sure we only have top 5 recommendations.
+#         """
+    
+#     # Start the conversation with the user proxy
+#     user_proxy.initiate_chat(
+#         manager,
+#         message=prompt, # Use the provided prompt
+#         max_round=50,
+#         # summary_method="reflection_with_llm"
+#     )
+
+#     # Collect the conversation messages
+#     conversation = []
+#     for message in manager.groupchat.messages:
+#         msg_content = {
+#             "content": message.get("content", ""),
+#             "role": message.get("role", ""),
+#             "name": message.get("name", ""),
+#             "timestamp": datetime.now().strftime("%H:%M:%S"),
+#         }
+#         conversation.append(msg_content)
+    
+#     return conversation
 
