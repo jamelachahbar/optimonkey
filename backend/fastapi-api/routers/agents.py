@@ -18,7 +18,7 @@ chat_status = "ended"
 
 
 # Modify start_agents to use BackgroundTasks
-@router.post("/start-agents")
+@router.post("/api/start-agents")
 async def start_agents(background_tasks: BackgroundTasks):
     global chat_status
 
@@ -27,13 +27,13 @@ async def start_agents(background_tasks: BackgroundTasks):
         if chat_status == 'error':
             chat_status = 'ended'
         with print_queue.mutex:
-            print_queue.queue.clear()
+            user_queue.queue.clear()
         with user_queue.mutex:
             print_queue.queue.clear()
 
         # Start background task for running the agents
         background_tasks.add_task(run_chat)
-        chat_status = "Chat ongoing"
+        chat_status = "chat_ongoing"
 
         return JSONResponse({"status": chat_status})
     except Exception as e:
@@ -42,16 +42,26 @@ async def start_agents(background_tasks: BackgroundTasks):
 
 
 # Route to send a message and start the conversation stream
-@router.post("/send-message")
-async def send_message(request: Request):
+@router.post("/api/send-message")
+async def send_message(request: Request, background_tasks: BackgroundTasks):
+    global chat_status
     data = await request.json()
-    user_input = data['message']
+    user_input = data.get('message')
     
-    # Add user input to the queue
-    user_queue.put(user_input)
-    
-    # Return response indicating the message was received
-    return JSONResponse({"status": "Message received"})
+    if user_input is not None:
+        # Add user input to the queue
+        user_queue.put(user_input)
+
+        # If chat is ongoing, ensure the agents keep processing
+        if chat_status != "chat_ongoing":
+            chat_status = "chat_ongoing"
+            background_tasks.add_task(run_chat)
+            
+        # Return response indicating the message was received
+        return JSONResponse({"status": "Message received"})
+    else:
+        return JSONResponse({"status": "Message not received"})
+
 
 
 # Route to fetch messages from the conversation
@@ -69,12 +79,15 @@ async def get_message():
 async def run_chat():
     global chat_status
     try:
-        # Use the `start_agent_conversation_stream` to start the agent conversation
-        async for message in start_agent_conversation_stream():
-            # Format and put messages in print_queue for the frontend to fetch
-            print_queue.put(message)
-
-        chat_status = "Chat ended"
+        # Run chat while processing user inputs
+        while chat_status == "chat_ongoing":
+            if not user_queue.empty():
+                user_input = user_queue.get()
+                # Assuming the start_agent_conversation_stream accepts user input
+                async for message in start_agent_conversation_stream(user_input):
+                    # Add each message to print_queue for SSE streaming
+                    print_queue.put(message)
+            await asyncio.sleep(1)
     except Exception as e:
         chat_status = "error"
         print_queue.put(json.dumps({"error": str(e)}))

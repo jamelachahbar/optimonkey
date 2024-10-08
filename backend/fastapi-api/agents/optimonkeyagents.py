@@ -121,7 +121,7 @@ code_executor = autogen.UserProxyAgent(
     description="Execute the code provided by the coder and provide the results.",
     human_input_mode="NEVER",
     code_execution_config={
-        "last_n_messages": 3,
+        "last_n_messages": 5,
         "work_dir": "coding",
         "use_docker": False,
     },
@@ -535,7 +535,9 @@ groupchat = autogen.GroupChat(
     agents=[planner, coder, critic, user_proxy, code_executor], 
     messages=[],  
     max_round=20,
-    speaker_selection_method="round_robin")
+    speaker_selection_method="round_robin"
+    )
+
 
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
@@ -602,6 +604,7 @@ async def start_agent_conversation_stream(prompt: Optional[str] = None):
                 manager,
                 message=prompt,  # Use the provided prompt
                 max_round=50,
+                clear_history=True
             )
             # Stream messages live as they are generated
             last_message_count = 0

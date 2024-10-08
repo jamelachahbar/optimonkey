@@ -30,8 +30,7 @@ const Dashboard: React.FC = () => {
   const [userMessage, setUserMessage] = useState<string>('');
   const [conversation, setConversation] = useState<Message[]>([]);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
-  const { isOpen, onClose } = useDisclosure();
-  const toast = useToast();
+  const { isOpen, onClose } = useDisclosure();  const toast = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toggleColorMode, colorMode } = useColorMode();
   const bgColor = useColorModeValue('gray.100', 'gray.800');
@@ -65,17 +64,12 @@ const Dashboard: React.FC = () => {
       console.error('Error with SSE:', error);
       source.close();
     };
-    
-    source.onerror = (error) => {
-      console.error('Error with SSE:', error);
-      source.close();
-    };
   };
 
   // Mutation to start agents and begin conversation stream
   // Start agents mutation
   const startAgentsMutation = useMutation<void, Error, void>({
-    mutationFn: () => axios.post(`/api/start-agents`).then((res) => res.data),
+    mutationFn: () => axios.post(`${API_BASE_URL}/start-agents`).then((res) => res.data),
     onMutate: () => {
       toast({
         title: 'Starting agents...',
@@ -109,9 +103,10 @@ const Dashboard: React.FC = () => {
   // Mutation to send a message
   const sendMessageMutation = useMutation<void, Error, string>({
     mutationFn: (message: string) => axios.post(`${API_BASE_URL}/send-message`, { message }).then((res) => res.data),
-    onMutate: () => {
-      const newMessage: Message = {
-        content: userMessage,
+    onMutate: async (message) => {
+      // Create a new message and add it to the conversation
+      const newMessage = {
+        content: message,
         role: 'user',
         name: 'You',
         timestamp: new Date().toLocaleTimeString(),
@@ -119,7 +114,14 @@ const Dashboard: React.FC = () => {
       setConversation((prev) => [...prev, newMessage]);
     },
     onSuccess: () => {
-      setUserMessage(''); // Clear user input after message is sent
+      setUserMessage('');
+      toast({
+        title: 'Message Sent',
+        description: 'Your message was sent successfully.',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
     },
     onError: () => {
       
@@ -134,9 +136,14 @@ const Dashboard: React.FC = () => {
   });
 
   const sendMessage = () => {
-    if (userMessage.trim() === '') return;
-    console.log('Sending message:', userMessage); // Log the message being sent
-    sendMessageMutation.mutate(userMessage);
+    const trimmedMessage = userMessage.trim();
+    if (trimmedMessage === '') return;
+  
+    // Clear the input before sending the message to provide instant feedback to the user
+    setUserMessage('');
+  
+    console.log('Sending message:', trimmedMessage);
+    sendMessageMutation.mutate(trimmedMessage);
   };
   // Handle keydown event to send message on "Enter"
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

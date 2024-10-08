@@ -1,6 +1,0 @@
-storage_account,used_capacity,transactions,recommendation
-czoiuoiuoiuoiuoui,912240.0,697.0,Downgrade performance tier or consolidate.
-finopshub0275wqmmubtdx2s,3460049002251.0,310.0,Review data retention policies.
-mgmtbadc,146669516348.0,717.0,Consider decommissioning.
-mgmtbdaa,6418406579477.0,720.0,Move infrequently accessed data to cooler tiers.
-stgaccttest123654,44299686.0,720.0,Merge accounts or downgrade.
