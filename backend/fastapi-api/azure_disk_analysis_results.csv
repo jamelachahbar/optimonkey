@@ -1,0 +1,2 @@
+disk_resource_id,disk_state,disk_type,disk_size,used_capacity,read_iops,write_iops,read_throughput,write_throughput,recommendation
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/acodemos/providers/Microsoft.Compute/disks/hackatonunuseddisk,Unattached,,,0,0,0,0,0,Consider decommissioning.

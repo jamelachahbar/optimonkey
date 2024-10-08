@@ -13,13 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def add_headers_middleware(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-# Include your routers
 app.include_router(agents.router)
 
 if __name__ == "__main__":

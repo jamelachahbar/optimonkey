@@ -100,4 +100,3 @@ async def stream_conversation():
             await asyncio.sleep(1)  # Small delay to avoid overwhelming the client
     
     return StreamingResponse(event_stream(), media_type="text/event-stream")
-

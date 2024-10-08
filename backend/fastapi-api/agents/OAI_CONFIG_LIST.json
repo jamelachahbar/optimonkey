@@ -1,13 +1,30 @@
 [
-    {
-        "model": "",
-        "api_key": ""
-    },
+
     {
         "model": "gpt-4o",
         "api_key": "5060bfdd7cbf48789d6ab72e350dc40f",
         "base_url": "https://aoai-jml.openai.azure.com/",
         "api_type": "azure",
         "api_version": "2023-03-15-preview"
+    },
+    {
+        "model": "gpt-4o-mini",
+        "api_key": "5060bfdd7cbf48789d6ab72e350dc40f",
+        "base_url": "https://aoai-jml.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "2024-07-18"
+    },
+    {
+        "model": "gpt-35-turbo-instruct",
+        "api_key": "5060bfdd7cbf48789d6ab72e350dc40f",
+        "base_url": "https://aoai-jml.openai.azure.com/",
+        "api_type": "azure",
+        "api_version": "0914"
+    },
+    {
+        "model": "gpt-4-turbo",
+        "api_key": "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",
+        "base_url": "https://api.openai.com/",
+        "api_type": "openai"
     }
 ]

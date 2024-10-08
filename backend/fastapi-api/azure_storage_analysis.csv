@@ -1,6 +1,6 @@
-storage_account,used_capacity,transactions,ingress,egress,recommendation
-czoiuoiuoiuoiuoui,912240.0,720.0,5182034.07,622326.49,Downgrade performance tier or consolidate.
-finopshub0275wqmmubtdx2s,3486263263881.0,291.0,18727623.85,37778670.53,Review data retention policies.
-mgmtbadc,146636314806.0,720.0,5196167.14,620943.32,Consider decommissioning.
-mgmtbdaa,6447676727002.0,720.0,2423889.68,3686329.29,Move infrequently accessed data to cooler tiers.
-stgaccttest123654,45115790.0,720.0,465307.5,593235.83,Merge accounts or downgrade.
+Name,ID,Location,Used Capacity,Transactions,Recommendation
+czoiuoiuoiuoiuoui,/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/cloud-shell-storage-westeurope/providers/Microsoft.Storage/storageAccounts/czoiuoiuoiuoiuoui,westeurope,910973.0,720,Consider consolidating or evaluating necessity.
+finopshub0275wqmmubtdx2s,/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/finops-hub021/providers/Microsoft.Storage/storageAccounts/finopshub0275wqmmubtdx2s,swedencentral,3545561444086.0,290,Analyze for potential storage tier adjustment or archiving strategy.
+mgmtbadc,/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/mgmtbadc,swedencentral,146349789879.0,720,Monitor and optimize as needed.
+mgmtbdaa,/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/mgmtbdaa,westeurope,6502035012582.0,720,Possibly leverage auto-tiering.
+stgaccttest123654,/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Storage/storageAccounts/stgaccttest123654,westeurope,46720459.0,720,Evaluate for possible deallocation if not in use.

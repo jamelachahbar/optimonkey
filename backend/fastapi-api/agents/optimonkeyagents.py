@@ -1,3 +1,4 @@
+
 from typing import Literal, Optional, List, Dict
 import logging
 import autogen
@@ -13,13 +14,14 @@ import csv
 import os
 from azure.mgmt.monitor import MonitorManagementClient
 from dotenv import load_dotenv
-
+from guidance import select, gen
+import guidance
 # Load environment variables from the .env file
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
 # Fetch the Bing API key from the environment variables, only if we use web search
-bing_api_key = os.getenv("BING_API_KEY")
+# bing_api_key = os.getenv("BING_API_KEY")
 
 # if not bing_api_key:
 #     raise ValueError("Error: Missing Bing API key.")
@@ -30,7 +32,7 @@ bing_api_key = os.getenv("BING_API_KEY")
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 42,
+    "cache_seed": 0,
     "timeout": 180
     
 }
@@ -64,7 +66,7 @@ resources = ["Microsoft.Compute/disks", "Microsoft.Compute/virtualMachines",
 # Initialize the Admin
 user_proxy = autogen.UserProxyAgent(
     name="admin",
-    human_input_mode='ALWAYS',
+    human_input_mode='NEVER',
     system_message='Give the task and send instruction to the critic to evaluate and refine the code.',
     code_execution_config=False,
     # llm_config=llm_config
@@ -511,52 +513,23 @@ register_function(
 
 
 
-from guidance import select
-import guidance
+
+
+# Set up logging configuration
+# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 # Initialize the LLM model using guidance
-lm = guidance.models._azure_openai.AzureOpenAI(
-    model="gpt-4o-mini",
-    azure_endpoint="https://oai-jml.openai.azure.com",
-    api_key="5060bfdd7cbf48789d6ab72e350dc40f",
-    version="2024-07-18"
-)
+# import tiktoken
 
-@guidance
-def validate_azure_cost_optimization_prompt(prompt: str) -> bool:
-    """
-    Validates the prompt for Azure cost optimization using the guidance framework.
-    """
-    try:
-        # Define a guidance task using gen and select
-        task = f"""
-        Help me with the following task:
-        {{prompt}}
-        Let's pick: should we write out our STEPS first or can we directly ANSWER the question?
-        """
-        
-        # Make sure to format the task correctly for guidance and execute the model
-        formatted_task = task.format(prompt=prompt)
-        result = lm(formatted_task)  # Removed prompt as second argument
+# enc = tiktoken.encoding_for_model("gpt-4o-mini")
+# lm = guidance.models._azure_openai.AzureOpenAI(
+#     model="gpt-4o-mini",
+#     azure_endpoint="https://oai-jml.openai.azure.com",
+#     api_key="5060bfdd7cbf48789d6ab72e350dc40f",
+#     version="2024-07-18",
+#     tokenizer=enc
+    
 
-        # Log the result for debugging purposes
-        print(f"Guidance result: {result}")
-
-        # Process the user's choice
-        choice = select(["STEPS", "ANSWER"], name="choice")
-        print(f"User choice: {choice}")
-
-        # Basic validation: check if "Azure" and "cost" or "optimization" are in the prompt
-        if "Azure" in prompt.lower() and ("cost" in prompt.lower() or "optimization" in prompt.lower()):
-            print("Prompt is valid for Azure cost optimization.")
-            return True  # Valid prompt for Azure cost optimization
-
-    except Exception as e:
-        print(f"Validation error: {e}")
-        return False
-
-    print("Prompt is not valid for Azure cost optimization.")
-    return False
-
+# )
 
 
 # Initialize GroupChat with the agents
@@ -569,14 +542,18 @@ groupchat = autogen.GroupChat(
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
 
-
+import time
+import asyncio
 import json
+from typing import List, Dict, Optional
+from .guidance_validator.optimonkeyvalidator import start_prompt_validation
+# Define the function to start the agent conversation
 async def start_agent_conversation_stream(prompt: Optional[str] = None):
     """
     Starts the agent conversation with the option to use a custom prompt.
     """
-    global chat_status  # Track the chat status globally
-    chat_status = "Chat ongoing"  # Set chat status as ongoing
+    global chat_status
+    chat_status = "Chat ongoing"
 
     # Use default prompt if none is provided
     if not prompt:
@@ -603,7 +580,7 @@ async def start_agent_conversation_stream(prompt: Optional[str] = None):
         # Task:
         Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
         Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
-        You should start with run kusto query then,then query metrics,... 
+        You should start with run kusto query then, query metrics,... 
         Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
         Provide advice on what to do with this information and output it along with the results in the CSV file.
         Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
@@ -611,110 +588,53 @@ async def start_agent_conversation_stream(prompt: Optional[str] = None):
         Make sure there is a CSV file with the results.
         Make sure we only have top 5 recommendations.
         """
-        
-    print(f"Starting conversation with prompt: {prompt}")  # Log the prompt
 
-    # Validate the prompt for Azure cost optimization using guidance
-    if not validate_azure_cost_optimization_prompt(prompt):
-        error_message = {
-            "content": "The prompt is not related to Azure cost optimization.",
-            "role": "system",
-            "name": "Error",
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-        }
-        print("Validation failed: Prompt not related to Azure cost optimization.")
-        yield json.dumps(error_message)
-        return  # Stop execution if the prompt is invalid
+    # Run prompt validation and await it
+    validation_responses = await start_prompt_validation(prompt)
 
-    print("Validation succeeded. Starting group chat with agents.")
-    
-    # If validation is successful, start the group chat
-    try:
-        # Start the conversation with the user proxy
-        user_proxy.initiate_chat(
-            manager,
-            message=prompt,  # Use the provided prompt
-            max_round=50,
-        )
+    # Check overall validation based on confidence scores
+    avg_confidence = sum(response.get("confidence_score", 0) for response in validation_responses) / len(validation_responses)
 
-        # Collect the conversation messages to be streamed live as they are generated
-        for message in manager.groupchat.messages:
-            print(f"Streaming message: {message}")  # Log each message
-            msg_content = {
-                "content": message.get("content"),  # Extract the message content from the message dict
-                "role": message.get("role"),
-                "name": message.get("name"),
+    if avg_confidence >= 3:
+        print("Prompt validation passed. Proceeding with conversation...")
+        time.sleep(5)
+        try:
+            # Start the conversation with the user proxy
+            user_proxy.initiate_chat(
+                manager,
+                message=prompt,  # Use the provided prompt
+                max_round=50,
+            )
+            # Stream messages live as they are generated
+            last_message_count = 0
+            
+            while True:
+
+                current_message_count = len(manager.groupchat.messages)
+                if current_message_count > last_message_count:
+                # Collect the conversation messages to be streamed live as they are generated
+                    for message in manager.groupchat.messages:
+                        print(f"Streaming message: {message}")  # Log each message
+                        msg_content = {
+                            "content": message.get("content"),  # Extract the message content from the message dict
+                            "role": message.get("role"),
+                            "name": message.get("name"),
+                            "timestamp": datetime.now().strftime("%H:%M:%S"),
+                        }
+                        yield json.dumps(msg_content)
+                    last_message_count = current_message_count
+
+                await asyncio.sleep(1)
+        except Exception as e:
+            error_message = {
+                "content": f"An error occurred: {str(e)}",
+                "role": "system",
+                "name": "Error",
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
             }
-            yield json.dumps(msg_content)
-    
-    except Exception as e:
-        error_message = {
-            "content": f"An error occurred: {str(e)}",
-            "role": "system",
-            "name": "Error",
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-        }
-        print(f"Error during agent conversation: {e}")
-        yield json.dumps(error_message)
+            print(f"Error during agent conversation: {e}")
+            yield json.dumps(error_message)
+    else:
+        print("Prompt validation failed. Please correct the prompt and try again.")
 
-# Define the function to start the agent conversation
-# def start_agent_conversation_stream(prompt: Optional[str] = None):
-#     """
-#     Starts the agent conversation with the option to use a custom prompt.
-#     """
-#     # Use default prompt if none is provided
-#     if not prompt:
-#         prompt = f"""
-#         You are a professional Azure consultant.
-#         Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
-        
-#         # Objective:
-#         # Your goal is to provide the user with a smooth, efficient and friendly experience by either providing proof data and metrics to justify the list of recommendations 
-#         and by providing advice on what to do with the information.
-        
-#         # Tools: Azure Resource Graph, Azure Monitor, Azure SDKs.
-#         You have a team of assistants to help you with the task. The agents are: Planner, Coder, Critic, and User Proxy.
-#         # Planner: Plans the tasks and makes sure everything is on track.
-#         # Coder: Writes the code to analyze the Azure environment and save the results to a CSV file.
-#         # Critic: Evaluates the quality of the code and provides a score from 1 to 10.
-#         # User Proxy: Executes the code and interacts with the system.
-
-#         The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
-#         to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
-#         querying usage metrics, getting log tables and querying these tables and saving results to a CSV file.
-#         The Critic will evaluate the quality of the code and provide a score from 1 to 10.
-
-#         # Task:
-#         Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
-#         Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
-#         You should start with run kusto query then,then query metrics,... 
-#         Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
-#         Provide advice on what to do with this information and output it along with the results in the CSV file.
-#         Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
-#         Make sure you use the functions in the right order and the code is well structured and easy to understand.
-#         Make sure there is a CSV file with the results.
-#         Make sure we only have top 5 recommendations.
-#         """
-    
-#     # Start the conversation with the user proxy
-#     user_proxy.initiate_chat(
-#         manager,
-#         message=prompt, # Use the provided prompt
-#         max_round=50,
-#         # summary_method="reflection_with_llm"
-#     )
-
-#     # Collect the conversation messages
-#     conversation = []
-#     for message in manager.groupchat.messages:
-#         msg_content = {
-#             "content": message.get("content", ""),
-#             "role": message.get("role", ""),
-#             "name": message.get("name", ""),
-#             "timestamp": datetime.now().strftime("%H:%M:%S"),
-#         }
-#         conversation.append(msg_content)
-    
-#     return conversation
-
+   
