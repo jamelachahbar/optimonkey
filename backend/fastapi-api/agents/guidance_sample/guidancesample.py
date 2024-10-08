@@ -91,5 +91,4 @@ user_proxy.initiate_chat(
     message="Plot and save a chart of nvidia and tsla stock price change YTD.",
     config=llm_config,
     max_turns=5
-
     )

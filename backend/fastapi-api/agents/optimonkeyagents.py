@@ -1,12 +1,11 @@
 
-from typing import Literal, Optional, List, Dict
+from typing import Optional, List, Dict
 import logging
 import autogen
 from typing_extensions import Annotated
 from azure.identity import DefaultAzureCredential
 from azure.mgmt.resourcegraph import ResourceGraphClient
 from azure.mgmt.resourcegraph.models import QueryRequest
-from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime
 from autogen import register_function
@@ -14,8 +13,7 @@ import csv
 import os
 from azure.mgmt.monitor import MonitorManagementClient
 from dotenv import load_dotenv
-from guidance import select, gen
-import guidance
+
 # Load environment variables from the .env file
 env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)

@@ -108,7 +108,7 @@ const Dashboard: React.FC = () => {
 
   // Mutation to send a message
   const sendMessageMutation = useMutation<void, Error, string>({
-    mutationFn: (message: string) => axios.post(`/api/send-message`, { message }).then((res) => res.data),
+    mutationFn: (message: string) => axios.post(`${API_BASE_URL}/send-message`, { message }).then((res) => res.data),
     onMutate: () => {
       const newMessage: Message = {
         content: userMessage,
@@ -135,9 +135,16 @@ const Dashboard: React.FC = () => {
 
   const sendMessage = () => {
     if (userMessage.trim() === '') return;
+    console.log('Sending message:', userMessage); // Log the message being sent
     sendMessageMutation.mutate(userMessage);
   };
-
+  // Handle keydown event to send message on "Enter"
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { // Allow shift+enter for new line
+        e.preventDefault(); // Prevent adding a new line
+        sendMessage(); // Call the send message function
+    }
+  };
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setUserMessage(e.target.value);
     e.target.style.height = 'auto'; // Reset textarea height
@@ -214,6 +221,7 @@ const Dashboard: React.FC = () => {
             ref={textareaRef}
             value={userMessage}
             onChange={handleTextareaChange}
+            onKeyDown={handleKeyDown}
             placeholder="Type your message..."
             size="md"
             resize="none"

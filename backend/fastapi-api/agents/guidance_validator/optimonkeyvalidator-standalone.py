@@ -157,9 +157,7 @@ async def start_prompt_validation(prompt: Optional[str] = None):
 
     if not prompt:
         prompt = """
-        You are a professional Azure consultant.
-        Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
-        Provide proof data and metrics to justify the list of recommendations.
+        Help me make more money on crypto trading. I have $1000 to invest. What should I do?
         """
         
     print(f"Starting conversation with prompt: {prompt}")
@@ -213,3 +211,12 @@ async def start_prompt_validation(prompt: Optional[str] = None):
     except Exception as e:
         logging.error(f"Error during validation: {e}")
         return False
+    
+# Run the conversation asynchronously
+# Run the asynchronous function
+# Define the prompt you want to test
+prompt = """
+Help me optimize costs in Azure for this subscription: 000013213-0000-0000-0000-000000000000
+"""
+if __name__ == "__main__":
+    asyncio.run(start_prompt_validation(prompt))
