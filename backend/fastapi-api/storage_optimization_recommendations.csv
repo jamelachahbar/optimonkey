@@ -1,0 +1,6 @@
+storage_account,used_capacity,transactions,ingress,egress,recommendation
+azmltest0467355361,4967744034,720,3481459.75,1024590.45,Consider tiering data or consolidating if similar patterns continue.
+czoiuoiuoiuoiuoui,912240,720,5187164.27,622071.49,Review for potential consolidations and efficiency optimization.
+dbstorage6xgnebmgwml4c,1344986585876,720,10100213.68,2601673.78,Consider downgrade if premium storage is not necessary.
+finopshub0275wqmmubtdx2s,3607886915127,256,16297247.86,31266264.29,Revise retention policy to possibly move less accessed data to cheaper tiers.
+memnmyresomyvm021307250,38635339470193,720,806517.33,1879361.64,Regular audits to ensure effective storage allocation.

@@ -91,11 +91,32 @@ planner = autogen.AssistantAgent(
 
 
 # Initialize the Code_Guru assistant for coding tasks
-coder = autogen.ConversableAgent(
+coder = autogen.AssistantAgent(
     name="Code_Guru",
-    description="Write code based on the plan provided by the planner.",
-    llm_config=llm_config
+    system_message="""You are a helpful AI Assistant. You are a highly experienced programmer specialized in Azure. 
+    Follow the approved plan and save the code to disk. Always use functions you have access to and start with run_kusto_query
+    When using code, you must indicate the script type in the code block. 
+    The user cannot provide any other feedback or perform any other action beyond executing the code you suggest. 
+    The user can't change your code. 
+    So do not suggest incomplete code which requires users to modify. 
+    Don't use a code block if it's not intended to be executed by the user.
+    If the result indicates there is an error, fix the error and output the code again. Suggest the 
+    full code instead of partial code or code changes. If the error can't be fixed or if the task is 
+    not solved even after the code is executed successfully, analyze the problem, revisit your 
+    assumption, collect additional info you need, and think of a different approach to try.
+    When you find an answer, verify the answer carefully. Include verifiable evidence in your response 
+    if possible.
+    Reply "TERMINATE" in the end when everything is done""", 
+    description="I'm a highly experienced programmer specialized in Python, bash. I am **ONLY** allowed to speak **immediately** after `Planner`.",
+    llm_config={
+        "cache_seed": 0,  # Seed for caching and reproducibility was 42
+        "config_list": config_list,  # List of OpenAI API configurations
+        "temperature": 0  # Temperature for sampling
+    },
+    human_input_mode="NEVER"
 )
+
+
 
 # Initialize the Critic assistant for code evaluation
 critic = autogen.AssistantAgent(
@@ -123,7 +144,7 @@ code_executor = autogen.UserProxyAgent(
     code_execution_config={
         "last_n_messages": 5,
         "work_dir": "coding",
-        "use_docker": False,
+        "use_docker": "python:3.10",
     },
     llm_config=llm_config
 )
@@ -191,7 +212,7 @@ def query_usage_metrics(
         metric_names = metric_names or ['UsedCapacity', 'Transactions', 'Ingress', 'Egress', 'Availability']
         interval = 'PT1H'  # Use hourly intervals for storage accounts
     elif resource_type_normalized == "microsoft.compute/disks":
-        metric_names = metric_names or ['Composite Disk Read Bytes/sec', 'Composite Disk Write Bytes/sec']
+        metric_names = metric_names or ['Composite Disk Readdre Bytes/sec', 'Composite Disk Write Bytes/sec','Composite Disk Read Operations/sec','Composite Disk Write Operations/sec']
         interval = interval or 'P1D'  # Use daily intervals for disks
     else:
         raise ValueError(f"Unsupported resource type: {resource_type}")
@@ -534,8 +555,9 @@ register_function(
 groupchat = autogen.GroupChat(
     agents=[planner, coder, critic, user_proxy, code_executor], 
     messages=[],  
-    max_round=20,
-    speaker_selection_method="round_robin"
+    max_round=50,
+    speaker_selection_method="round_robin",
+    select_speaker_prompt_template="Please select the next speaker from the list: {speaker_list}"
     )
 
 
@@ -548,94 +570,168 @@ import json
 from typing import List, Dict, Optional
 from .guidance_validator.optimonkeyvalidator import start_prompt_validation
 # Define the function to start the agent conversation
+# async def start_agent_conversation_stream(prompt: Optional[str] = None):
+#     """
+#     Starts the agent conversation with the option to use a custom prompt.
+#     """
+#     global chat_status
+#     chat_status = "Chat ongoing"
+
+#     # Use default prompt if none is provided
+#     if not prompt:
+#         prompt = f"""
+#         You are a professional Azure consultant.
+#         Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
+        
+#         # Objective:
+#         # Your goal is to provide the user with a smooth, efficient and friendly experience by either providing proof data and metrics to justify the list of recommendations 
+#         and by providing advice on what to do with the information.
+        
+#         # Tools: Azure Resource Graph, Azure Monitor, Azure SDKs.
+#         You have a team of assistants to help you with the task. The agents are: Planner, Coder, Critic, and User Proxy.
+#         # Planner: Plans the tasks and makes sure everything is on track.
+#         # Coder: Writes the code to analyze the Azure environment and save the results to a CSV file.
+#         # Critic: Evaluates the quality of the code and provides a score from 1 to 10.
+#         # User Proxy: Executes the code and interacts with the system.
+
+#         The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
+#         to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
+#         querying usage metrics, getting log tables and querying these tables and saving results to a CSV file.
+#         The Critic will evaluate the quality of the code and provide a score from 1 to 10.
+
+#         # Task:
+#         Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
+#         Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
+#         You should start with run kusto query then, query metrics,... 
+#         Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
+#         Provide advice on what to do with this information and output it along with the results in the CSV file.
+#         Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
+#         Make sure you use the functions in the right order and the code is well structured and easy to understand.
+#         Make sure there is a CSV file with the results.
+#         Make sure we only have top 5 recommendations.
+#         """
+
+#     # Run prompt validation and await it
+#     validation_responses = await start_prompt_validation(prompt)
+
+#     # Check overall validation based on confidence scores
+#     avg_confidence = sum(response.get("confidence_score", 0) for response in validation_responses) / len(validation_responses)
+
+#     if avg_confidence >= 3:
+#         print("Prompt validation passed. Proceeding with conversation...")
+#         time.sleep(5)
+#         try:
+#             # Start the conversation with the user proxy
+#             user_proxy.initiate_chat(
+#                 manager,
+#                 message=prompt,  # Use the provided prompt
+#                 max_round=50,
+#                 clear_history=True
+#             )
+#             # Stream messages live as they are generated
+#             last_message_count = 0
+            
+#             while True:
+
+#                 current_message_count = len(manager.groupchat.messages)
+#                 if current_message_count > last_message_count:
+#                 # Collect the conversation messages to be streamed live as they are generated
+#                     for message in manager.groupchat.messages:
+#                         print(f"Streaming message: {message}")  # Log each message
+#                         msg_content = {
+#                             "content": message.get("content"),  # Extract the message content from the message dict
+#                             "role": message.get("role"),
+#                             "name": message.get("name"),
+#                             "timestamp": datetime.now().strftime("%H:%M:%S"),
+#                         }
+#                         yield json.dumps(msg_content)
+#                     last_message_count = current_message_count
+
+#                 await asyncio.sleep(1)
+#         except Exception as e:
+#             error_message = {
+#                 "content": f"An error occurred: {str(e)}",
+#                 "role": "system",
+#                 "name": "Error",
+#                 "timestamp": datetime.now().strftime("%H:%M:%S"),
+#             }
+#             print(f"Error during agent conversation: {e}")
+#             yield json.dumps(error_message)
+#     else:
+#         print("Prompt validation failed. Please correct the prompt and try again.")
+
+
+
+
+
 async def start_agent_conversation_stream(prompt: Optional[str] = None):
-    """
-    Starts the agent conversation with the option to use a custom prompt.
-    """
     global chat_status
     chat_status = "Chat ongoing"
+    print(f"Starting conversation with prompt: {prompt}")  # Add a debug log here
 
     # Use default prompt if none is provided
     if not prompt:
-        prompt = f"""
-        You are a professional Azure consultant.
-        Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
-        
-        # Objective:
-        # Your goal is to provide the user with a smooth, efficient and friendly experience by either providing proof data and metrics to justify the list of recommendations 
-        and by providing advice on what to do with the information.
-        
-        # Tools: Azure Resource Graph, Azure Monitor, Azure SDKs.
-        You have a team of assistants to help you with the task. The agents are: Planner, Coder, Critic, and User Proxy.
-        # Planner: Plans the tasks and makes sure everything is on track.
-        # Coder: Writes the code to analyze the Azure environment and save the results to a CSV file.
-        # Critic: Evaluates the quality of the code and provides a score from 1 to 10.
-        # User Proxy: Executes the code and interacts with the system.
+        prompt = "You are a professional Azure consultant. Analyze Azure environment..."
 
-        The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
-        to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
-        querying usage metrics, getting log tables and querying these tables and saving results to a CSV file.
-        The Critic will evaluate the quality of the code and provide a score from 1 to 10.
-
-        # Task:
-        Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
-        Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
-        You should start with run kusto query then, query metrics,... 
-        Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
-        Provide advice on what to do with this information and output it along with the results in the CSV file.
-        Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
-        Make sure you use the functions in the right order and the code is well structured and easy to understand.
-        Make sure there is a CSV file with the results.
-        Make sure we only have top 5 recommendations.
-        """
-
-    # Run prompt validation and await it
-    validation_responses = await start_prompt_validation(prompt)
-
-    # Check overall validation based on confidence scores
-    avg_confidence = sum(response.get("confidence_score", 0) for response in validation_responses) / len(validation_responses)
-
-    if avg_confidence >= 3:
-        print("Prompt validation passed. Proceeding with conversation...")
-        time.sleep(5)
-        try:
-            # Start the conversation with the user proxy
-            user_proxy.initiate_chat(
+    try:
+        # Log before starting validation
+        print("Running prompt validation...")
+        validation_responses = await start_prompt_validation(prompt)
+ 
+        avg_confidence = sum(response.get("confidence_score", 0) for response in validation_responses) / len(validation_responses)
+        print(f"Validation confidence score: {avg_confidence}")
+        if avg_confidence < 3:
+            print("Prompt validation failed. Please correct the prompt and try again.")
+            for response in validation_responses:
+                yield response
+        elif avg_confidence >= 3:
+            print("Prompt validation passed. Proceeding with conversation...")
+            chat_result = user_proxy.initiate_chat(
                 manager,
-                message=prompt,  # Use the provided prompt
-                max_round=50,
-                clear_history=True
+                message=prompt, 
+                max_turns=2, 
+                clear_history=True,
+                summary_method="reflection_with_llm"
             )
-            # Stream messages live as they are generated
-            last_message_count = 0
+            validation_responses.append(chat_result)
+            summary = chat_result.summary
+            # Safely access the summary key from the chat_result object
+            if isinstance(summary, dict) and 'summary' in summary:
+                summary_text = summary['summary']
+            else:
+                summary_text = str(summary)  # If it's not a dictionary, treat it as a string
             
-            while True:
+            # Extract agent messages for recommendations
+            recommendations = ""
+            for message in manager.groupchat.messages:
+                if "recommendation" in message.get("content", "").lower():
+                    recommendations += f"\n{message.get('content')}"
 
-                current_message_count = len(manager.groupchat.messages)
-                if current_message_count > last_message_count:
-                # Collect the conversation messages to be streamed live as they are generated
-                    for message in manager.groupchat.messages:
-                        print(f"Streaming message: {message}")  # Log each message
-                        msg_content = {
-                            "content": message.get("content"),  # Extract the message content from the message dict
-                            "role": message.get("role"),
-                            "name": message.get("name"),
-                            "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        }
-                        yield json.dumps(msg_content)
-                    last_message_count = current_message_count
+            # Generate a smart summary using LLM
+            # llm_summarization_prompt = f"""
+            # Given the conversation details below, generate a comprehensive summary that includes key points, recommendations, and actionable insights:
+            
+            # Conversation Summary: {summary_text}
+            # Recommendations: {recommendations}
 
-                await asyncio.sleep(1)
-        except Exception as e:
-            error_message = {
-                "content": f"An error occurred: {str(e)}",
-                "role": "system",
-                "name": "Error",
-                "timestamp": datetime.now().strftime("%H:%M:%S"),
-            }
-            print(f"Error during agent conversation: {e}")
-            yield json.dumps(error_message)
-    else:
-        print("Prompt validation failed. Please correct the prompt and try again.")
+            # Refine this summary to make it more insightful and include any missing information from the discussion.
+            # """
+            # # Have the coder agent summarize the conversation (example flow)
+            # chat_result = user_proxy.initiate_chat(
+            #     coder,
+            #     message=llm_summarization_prompt,
+            #     max_turns=2,
+            #     summary_method="reflection_with_llm"
+            # )
+            # refined_summary = chat_result.summary # Use the LLM (coder) to refine the summary
 
-   
+            # Finalize the summary with recommendations
+            final_summary = f"{summary_text}\n\nHere are the Recommendations:\n{recommendations}"
+
+            # Return the final summary
+            yield final_summary
+        else:
+            print("Prompt validation failed. Please correct the prompt and try again.")
+    except Exception as e:
+        yield f"An error occurred: {str(e)}"
+        print(f"Error during agent conversation: {e}")

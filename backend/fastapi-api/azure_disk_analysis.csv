@@ -1,0 +1,4 @@
+disk_resource_id,disk_state,disk_size,recommendation
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/acodemos/providers/Microsoft.Compute/disks/hackatonunuseddisk,Unattached,Unknown,Consider decommissioning.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/MGMT/providers/Microsoft.Compute/disks/VM-LINUX-01_OsDisk_1_765c8e478e9148afa4ba3d2dc370d52e,Reserved,Unknown,Evaluate resizing or reassignment.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/MGMT/providers/Microsoft.Compute/disks/vmwithhibernationmode_OsDisk_1_80889764746a4f4ebbf127a1fb7f6645,Reserved,Unknown,Ensure appropriate sizing for performance needs.

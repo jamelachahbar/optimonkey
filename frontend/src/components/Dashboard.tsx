@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Heading,
@@ -15,8 +15,6 @@ import {
   useColorModeValue,
 } from '@chakra-ui/react';
 import { MoonIcon, SunIcon } from '@chakra-ui/icons';
-import { useMutation } from '@tanstack/react-query';
-import axios from 'axios';
 import PromptTemplate from './PromptTemplate';
 
 interface Message {
@@ -29,66 +27,111 @@ interface Message {
 const Dashboard: React.FC = () => {
   const [userMessage, setUserMessage] = useState<string>('');
   const [conversation, setConversation] = useState<Message[]>([]);
-  const [eventSource, setEventSource] = useState<EventSource | null>(null);
-  const { isOpen, onClose } = useDisclosure();  const toast = useToast();
+  const [webSocket, setWebSocket] = useState<WebSocket | null>(null); // WebSocket state
+  const { isOpen, onClose } = useDisclosure();  
+  const toast = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toggleColorMode, colorMode } = useColorMode();
   const bgColor = useColorModeValue('gray.100', 'gray.800');
   const API_BASE_URL = 'http://localhost:8081/api';
 
-  // Helper function to start SSE conversation stream
-  const startStreamingConversation = (url: string) => {
-    if (eventSource) {
-      eventSource.close();
-    }
+  useEffect(() => {
+    // Initialize WebSocket connection
+    const ws = new WebSocket('ws://localhost:8081/ws/conversation');
+    setWebSocket(ws);
 
-    const source = new EventSource(url);
-    setEventSource(source);
-
-    source.onmessage = (event) => {
-      try {
-        const messageData = JSON.parse(event.data);
-        console.log("Received message from backend:", messageData);
-        if (messageData.content && messageData.content.toLowerCase().includes('chat ended')) {
-          source.close();
-          setEventSource(null);  // Clear the EventSource after it closes
-        } else {
-          setConversation((prev) => [...prev, messageData]);
-        }
-      } catch (error) {
-        console.error('Error parsing message:', error);
-      }
-    };
-    
-    source.onerror = (error) => {
-      console.error('Error with SSE:', error);
-      source.close();
-    };
-  };
-
-  // Mutation to start agents and begin conversation stream
-  // Start agents mutation
-  const startAgentsMutation = useMutation<void, Error, void>({
-    mutationFn: () => axios.post(`${API_BASE_URL}/start-agents`).then((res) => res.data),
-    onMutate: () => {
+    ws.onopen = () => {
+      console.log("WebSocket connection established.");
       toast({
-        title: 'Starting agents...',
+        title: 'WebSocket Connected',
+        description: 'Connection to the server established.',
         status: 'info',
         duration: 2000,
         isClosable: true,
       });
-    },
-    onSuccess: () => {
-      startStreamingConversation('http://localhost:8081/api/stream-conversation');
+    };
+
+    ws.onmessage = (event) => {
+      const messageData = JSON.parse(event.data);
+      console.log("Received message from backend:", messageData);
+      // Update conversation with the received message
+      setConversation((prev) => [...prev, messageData]);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket connection closed.");
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket Error:', error);
       toast({
-        title: 'Agents Started',
-        description: 'Agents have started with the default prompt.',
-        status: 'success',
-        duration: 3000,
+        title: 'WebSocket Error',
+        description: 'Error occurred in WebSocket connection.',
+        status: 'error',
+        duration: 2000,
         isClosable: true,
       });
-    },
-    onError: () => {
+    };
+
+    return () => {
+      ws.close(); // Clean up the WebSocket connection on component unmount
+    };
+  }, []);
+
+  const sendMessage = () => {
+    const trimmedMessage = userMessage.trim();
+    if (trimmedMessage === '' || !webSocket || webSocket.readyState !== WebSocket.OPEN) return;
+
+    const newMessage = {
+      content: trimmedMessage,
+      role: 'user',
+      name: 'You',
+      timestamp: new Date().toLocaleTimeString(),
+    };
+
+    // Send message to the WebSocket server
+    webSocket.send(JSON.stringify({ message: trimmedMessage }));
+
+    // Update conversation with the new message
+    setConversation((prev) => [...prev, newMessage]);
+    setUserMessage(''); // Clear input after sending
+  };
+
+  // Handle input changes
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setUserMessage(e.target.value);
+  };
+
+  // Send message when pressing "Enter"
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // Prevents newline
+      sendMessage();
+    }
+  };
+  const startAgents = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/start-agents`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+  
+      const result = await response.json();
+      if (result.status === 'chat_ongoing') {
+        toast({
+          title: 'Agents Started',
+          description: 'Agents have started successfully.',
+          status: 'success',
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        throw new Error(result.error || 'Failed to start agents');
+      }
+    } catch (error) {
+      console.error('Error starting agents:', error);
       toast({
         title: 'Error',
         description: 'There was an error starting the agents.',
@@ -96,68 +139,8 @@ const Dashboard: React.FC = () => {
         duration: 3000,
         isClosable: true,
       });
-    },
-  });
-
-
-  // Mutation to send a message
-  const sendMessageMutation = useMutation<void, Error, string>({
-    mutationFn: (message: string) => axios.post(`${API_BASE_URL}/send-message`, { message }).then((res) => res.data),
-    onMutate: async (message) => {
-      // Create a new message and add it to the conversation
-      const newMessage = {
-        content: message,
-        role: 'user',
-        name: 'You',
-        timestamp: new Date().toLocaleTimeString(),
-      };
-      setConversation((prev) => [...prev, newMessage]);
-    },
-    onSuccess: () => {
-      setUserMessage('');
-      toast({
-        title: 'Message Sent',
-        description: 'Your message was sent successfully.',
-        status: 'success',
-        duration: 2000,
-        isClosable: true,
-      });
-    },
-    onError: () => {
-      
-      toast({
-        title: 'Error',
-        description: 'There was an error sending the message.',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-    },
-  });
-
-  const sendMessage = () => {
-    const trimmedMessage = userMessage.trim();
-    if (trimmedMessage === '') return;
-  
-    // Clear the input before sending the message to provide instant feedback to the user
-    setUserMessage('');
-  
-    console.log('Sending message:', trimmedMessage);
-    sendMessageMutation.mutate(trimmedMessage);
-  };
-  // Handle keydown event to send message on "Enter"
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { // Allow shift+enter for new line
-        e.preventDefault(); // Prevent adding a new line
-        sendMessage(); // Call the send message function
     }
   };
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setUserMessage(e.target.value);
-    e.target.style.height = 'auto'; // Reset textarea height
-    e.target.style.height = `${e.target.scrollHeight}px`; // Adjust based on content
-  };
-
   // Handle selection from the prompt template
   const handlePromptSelection = (prompt: string) => {
     setUserMessage(prompt);
@@ -183,10 +166,10 @@ const Dashboard: React.FC = () => {
               <Button
                 mr={4}
                 colorScheme="teal"
-                onClick={() => startAgentsMutation.mutate()}
-                disabled={startAgentsMutation.isLoading}
+                onClick={startAgents} // Now triggers the startAgents function
+                disabled={!webSocket || webSocket.readyState !== WebSocket.OPEN}
               >
-                {startAgentsMutation.isLoading ? <><Spinner size="sm" mr={2} /> Running Agents...</> : 'Start Agents'}
+                Start Chat
               </Button>
               <Button onClick={toggleColorMode}>
                 {colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
@@ -207,10 +190,34 @@ const Dashboard: React.FC = () => {
                 {conversation.map((msg, index) => (
                   <Flex key={index} alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'} p={3} boxShadow="md" maxWidth="80%" flexDir="row" alignItems="center">
                     {msg.role !== 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />}
+                    
                     <Box>
-                      <Text fontWeight="bold">{msg.name} {msg.timestamp ? `• ${msg.timestamp}` : ''}</Text>
-                      <Text whiteSpace="pre-wrap">{msg.content}</Text>
+                      {/* Always render the agent's name and timestamp */}
+                      <Text fontWeight="bold" mb={2}>
+                        {msg.name && msg.timestamp ? `${msg.name} • ${msg.timestamp}` : null}
+                      </Text>
+
+                      {/* Conditionally render validation confidence messages if they exist */}
+                      {msg.content?.confidence_score !== undefined && msg.content?.explanation ? (
+                        <Box>
+                          <Flex alignItems="center" mb={2}>
+                            <Text fontWeight="bold">Confidence Score: {msg.content.confidence_score}</Text>
+                            {msg.content.confidence_score === 0 ? (
+                              <Text ml={2} color="red.500" fontSize="xl">✖️</Text>
+                            ) : (
+                              <Text ml={2} color="green.500" fontSize="xl">✔️</Text>
+                            )}
+                          </Flex>
+                          <Text fontStyle="italic" whiteSpace="pre-wrap">
+                            Explanation: {msg.content.explanation}
+                          </Text>
+                        </Box>
+                      ) : (
+                        // Render the normal message content if it's not a validation confidence message
+                        <Text whiteSpace="pre-wrap">{msg.content}</Text>
+                      )}
                     </Box>
+
                     {msg.role === 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" ml={2} />}
                   </Flex>
                 ))}
@@ -238,10 +245,10 @@ const Dashboard: React.FC = () => {
             bg="transparent"
             border="1px solid"
             borderColor={colorMode === 'light' ? 'gray.300' : 'gray.600'}
-            disabled={sendMessageMutation.isLoading || startAgentsMutation.isLoading}
+            disabled={!webSocket || webSocket.readyState !== WebSocket.OPEN}
           />
-          <Button colorScheme="teal" onClick={sendMessage} disabled={sendMessageMutation.isLoading || startAgentsMutation.isLoading}>
-            {sendMessageMutation.isLoading ? <Spinner size="sm" /> : 'Send'}
+          <Button colorScheme="teal" onClick={sendMessage} disabled={!webSocket || webSocket.readyState !== WebSocket.OPEN}>
+            Send
           </Button>
         </Box>
       </Box>
