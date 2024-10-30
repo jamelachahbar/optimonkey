@@ -1,0 +1,3 @@
+network_resource_id,network_type,ingress,ingress_rate,egress,egress_rate,used_capacity,recommendation
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Network/networkInterfaces/NIC-VM-LINUX-01,Public,0,0,0,0,0,Consider removing unused network interfaces.
+/subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/mgmt/providers/Microsoft.Network/networkSecurityGroups/aadds-nsg,Private,0,0,0,0,0,Review network security rules for optimization.

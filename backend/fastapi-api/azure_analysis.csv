@@ -1,0 +1,3 @@
+Resource Name,Resource Type,Usage Data,Recommendation
+Placeholder Resource 1,Placeholder Type,"{'Metric 1': 100, 'Metric 2': 200}",Placeholder Recommendation
+Placeholder Resource 2,Placeholder Type,"{'Metric 1': 150, 'Metric 2': 250}",Placeholder Recommendation

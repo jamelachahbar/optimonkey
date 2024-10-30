@@ -1,6 +1,0 @@
-storage_account,used_capacity,transactions,ingress,egress,last_access_date_time,recommendation
-azmltest0467355361,4967744034.0,720,3471594.966,1019701.136,,Consider reducing the storage tier if access is infrequent.
-czoiuoiuoiuoiuoui,912240.0,720,5184313.257,621959.582,,Review potential for consolidating or downgrading.
-dbstorage6xgnebmgwml4c,1344986585876.0,720,8378357.215,2013723.974,,Optimize ingress and clean redundant data.
-finopshub0275wqmmubtdx2s,3607886915127.0,256,16980791.85,30712930.287,,Evaluate transaction costs vs. used capacity.
-memnmyresomyvm021307250,38635339470193.0,720,806491.591,1879193.12,,Consider tiering less frequently accessed data.

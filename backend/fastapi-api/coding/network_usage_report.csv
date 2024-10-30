@@ -1,0 +1,2 @@
+network_resource_id,network_type,ingress,egress,recommendation
+/subscription/...,Public,500,300,Monitor usage

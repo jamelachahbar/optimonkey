@@ -1,0 +1,6 @@
+storage_account,used_capacity,transactions,ingress,egress,recommendation
+czoiuoiuoiuoiuoui,912240.0,720.0,5178259.59,621480.65,Consider downgrading if performance is not critical.
+finopshub0275wqmmubtdx2s,3700857031417.0,227.0,19138810.71,30596889.65,Review data retention policies.
+mgmtbadc,146387985584.0,720.0,5186171.34,614869.3,Move infrequently accessed data to cooler tiers.
+mgmtbdaa,6632716307123.0,720.0,2405411.07,3657527.27,Optimize ingress and cleanup infrequently accessed data.
+stgaccttest123654,50874607.0,720.0,463669.24,592941.47,Evaluate data lifecycle management.

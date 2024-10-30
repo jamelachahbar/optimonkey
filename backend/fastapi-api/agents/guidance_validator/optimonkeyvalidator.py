@@ -157,9 +157,11 @@ async def start_prompt_validation(prompt: Optional[str] = None):
 
     if not prompt:
         prompt = """
-        You are a professional Azure consultant.
-        Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
-        Provide proof data and metrics to justify the list of recommendations.
+        You are a professional Azure consultant and a FinOps guru.
+        Your role is to analyze the prompt and user message and ensure it is about finding opportunities to 
+        save cost in Azure based on activity and usage. It should also content clear goals and objectives for 
+        the cost optimization process. The prompt should be clear and concise, and the user message should 
+        provide relevant information about the Azure environment and the cost optimization goals.       
         """
         
     print(f"Starting validation with prompt: {prompt}")
@@ -211,4 +213,4 @@ async def start_prompt_validation(prompt: Optional[str] = None):
 
     except Exception as e:
         logging.error(f"Error during validation: {e}")
-        return [{"confidence_score": 0, "explanation": str(e)}]
+        return [{"confidence_score": 0, "explanation": str(e)}]  

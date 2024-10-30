@@ -13,7 +13,7 @@ services:
   fastapi-api:
     build: ./backend/fastapi-api
     ports:
-      - "8000:8000"
+      - "8081:8081"
     volumes:
       - ./backend/fastapi-api:/app
 

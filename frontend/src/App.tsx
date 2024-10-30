@@ -5,8 +5,8 @@ import LandingPage from './components/LandingPage';
 import { Box } from '@chakra-ui/react';
 import Dashboard from './components/Dashboard';
 import OptiMonkeyLayout from './components/OptiMonkeyLayout';
+import DashboardNew from './components/DashboardNew';
 // import { MoonIcon, SunIcon } from '@chakra-ui/icons'; // Importing icons for color mode
-import DashboardTest from './components/DashboardTest';
 // Create a new QueryClient instance
 const queryClient = new QueryClient();
 
@@ -27,7 +27,7 @@ const App: React.FC = () => {
             <Route path="/" element={<LandingPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/optimonkeylayout" element={<OptiMonkeyLayout />} />
-            <Route path="/dashboardtest" element={<DashboardTest />} />
+            <Route path="/dashboardnew" element={<DashboardNew />} />
 
           </Routes>
         </Router>

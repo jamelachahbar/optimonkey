@@ -3,8 +3,8 @@ import queue
 import os
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, Request, Response, BackgroundTasks, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Response, WebSocket, WebSocketDisconnect, BackgroundTasks, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from agents.optimonkeyagents import start_agent_conversation_stream  # Import the agent function
 
 # Initialize APIRouter for organizing routes
@@ -20,33 +20,32 @@ chat_status = "ended"
 # Manage WebSocket connections
 connections = {}
 
-
 @router.websocket("/ws/conversation")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     client_id = id(websocket)
     connections[client_id] = websocket
-
     try:
         while True:
+            # Listen for messages from the client
             data = await websocket.receive_text()
-            data_json = json.loads(data)
+            print(f"Received message from client: {data}")
 
-            if data_json.get("message") == "start_chat":
-                # Start chat logic, initiate conversation with agents
-                await send_message_to_clients("Chat has started!")  # Notify clients that the chat started
+            # Trigger the agent conversation based on client input
+            async for message in start_agent_conversation_stream(data):
+                response_message = {
+                    "content": message,
+                    "role": "agent",
+                    "name": "Agent",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                # Send each message to the client as soon as it’s available
+                await websocket.send_text(json.dumps(response_message))
 
-                # Optionally start the agent conversation asynchronously
-                asyncio.create_task(run_chat())
-
-            else:
-                print(f"Received message from client {client_id}: {data_json['message']}")
-                # Send back a response for testing purposes
-                response = {"message": f"Echo: {data_json['message']}"}
-                await websocket.send_text(json.dumps(response))
     except WebSocketDisconnect:
         print(f"Client {client_id} disconnected")
         del connections[client_id]
+
 
 # Function to handle the conversation asynchronously
 async def run_chat():
@@ -79,8 +78,10 @@ async def run_chat():
             "timestamp": datetime.now().strftime("%H:%M:%S"),
         }
         # Send error to all WebSocket connections
+        websocket_connections = list(connections.values())
         for websocket in websocket_connections:
             await websocket.send_text(json.dumps(error_message))
+
 
 # Function to send messages to all connected WebSocket clients
 async def send_message_to_clients(message: str):
@@ -95,7 +96,6 @@ async def send_message_to_clients(message: str):
 
     for client_id in disconnected_clients:
         del connections[client_id]
-
 
 
 @router.post("/start-agents")
@@ -127,3 +127,16 @@ async def download_recommendations():
     if os.path.exists(csv_file_path):
         return Response(open(csv_file_path, "rb").read(), media_type="text/csv")
     return {"error": "CSV file not found"}
+
+
+# Add the missing /api/send_message route
+@router.post("/api/send_message")
+async def send_message(request: Request):
+    body = await request.json()
+    user_input = body.get("message", "")
+
+    if user_input:
+        user_queue.put(user_input)  # Add the input message to the user queue
+        return JSONResponse({"status": "Message Received"})
+    else:
+        return JSONResponse({"status": "Error", "message": "No message provided"}, status_code=400)

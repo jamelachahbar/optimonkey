@@ -16,9 +16,10 @@ import {
 } from '@chakra-ui/react';
 import { MoonIcon, SunIcon } from '@chakra-ui/icons';
 import PromptTemplate from './PromptTemplate';
+import { CheckCircleIcon, CloseIcon } from '@chakra-ui/icons';
 
 interface Message {
-  content: string;
+  content: any | { confidence_score: number; explanation: string };
   role: string;
   name: string;
   timestamp?: string;
@@ -28,12 +29,13 @@ const Dashboard: React.FC = () => {
   const [userMessage, setUserMessage] = useState<string>('');
   const [conversation, setConversation] = useState<Message[]>([]);
   const [webSocket, setWebSocket] = useState<WebSocket | null>(null); // WebSocket state
-  const { isOpen, onClose } = useDisclosure();  
+  const { isOpen } = useDisclosure();  
   const toast = useToast();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toggleColorMode, colorMode } = useColorMode();
   const bgColor = useColorModeValue('gray.100', 'gray.800');
   const API_BASE_URL = 'http://localhost:8081/api';
+  const [loadingScore, setLoadingScore] = useState<boolean>(true);
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -50,13 +52,27 @@ const Dashboard: React.FC = () => {
         isClosable: true,
       });
     };
-
     ws.onmessage = (event) => {
       const messageData = JSON.parse(event.data);
-      console.log("Received message from backend:", messageData);
-      // Update conversation with the received message
-      setConversation((prev) => [...prev, messageData]);
+      // Check if it's a normal message or validation message
+      if (messageData.content && typeof messageData.content === 'object' && 'confidence_score' in messageData.content) {
+        setLoadingScore(true); // Start spinner for the score
+        setTimeout(() => {
+          setLoadingScore(false); // Simulate score calculation delay
+        }, 2000); // Adjust the delay if necessary
+      
+        // Validation message, format differently
+        const formattedMessage = {
+          ...messageData,
+          content: `Confidence Score: ${messageData.content.confidence_score}\nExplanation: ${messageData.content.explanation}`,
+        };
+        setConversation((prev) => [...prev, formattedMessage]);
+      } else {
+        // Normal message, just add to the conversation
+        setConversation((prev) => [...prev, messageData]);
+      }
     };
+
 
     ws.onclose = () => {
       console.log("WebSocket connection closed.");
@@ -186,42 +202,57 @@ const Dashboard: React.FC = () => {
 
           <Box flex="1" overflowY="auto" p={4} mt={4} maxH="60vh">
             {conversation.length > 0 ? (
-              <VStack spacing={4} align="stretch">
-                {conversation.map((msg, index) => (
-                  <Flex key={index} alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'} p={3} boxShadow="md" maxWidth="80%" flexDir="row" alignItems="center">
-                    {msg.role !== 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />}
-                    
-                    <Box>
-                      {/* Always render the agent's name and timestamp */}
-                      <Text fontWeight="bold" mb={2}>
-                        {msg.name && msg.timestamp ? `${msg.name} • ${msg.timestamp}` : null}
-                      </Text>
+            <VStack spacing={4} align="stretch">
+              {conversation.map((msg, index) => (
+                <Flex
+                  key={index}
+                  alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
+                  p={3}
+                  boxShadow="md"
+                  maxWidth="80%"
+                  flexDir="row"
+                  alignItems="center"
+                >
+                  {/* Display the avatar for non-user messages */}
+                  {msg.role !== 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />}
+                  
+                  <Box>
+                    {/* Display the agent's name and the timestamp */}
+                    <Text fontWeight="bold" mb={2}>
+                      {msg.name ? `${msg.name}` : 'Agent'} • {msg.timestamp}
+                    </Text>
 
-                      {/* Conditionally render validation confidence messages if they exist */}
-                      {msg.content?.confidence_score !== undefined && msg.content?.explanation ? (
-                        <Box>
+                    {/* Conditionally render validation score with spinner */}
+                    {msg.content.confidence_score !== undefined ? (
+                      <Box>
+                        {loadingScore ? (
+                          <Flex alignItems="center" mb={2}>
+                            <Spinner size="sm" color="blue.500" />
+                            <Text ml={2}>Calculating validation score...</Text>
+                          </Flex>
+                        ) : (
                           <Flex alignItems="center" mb={2}>
                             <Text fontWeight="bold">Confidence Score: {msg.content.confidence_score}</Text>
                             {msg.content.confidence_score === 0 ? (
-                              <Text ml={2} color="red.500" fontSize="xl">✖️</Text>
+                              <CloseIcon ml={2} color="red.500" fontSize="xl" />
                             ) : (
-                              <Text ml={2} color="green.500" fontSize="xl">✔️</Text>
+                              <CheckCircleIcon ml={2} color="green.500" fontSize="xl" />
                             )}
                           </Flex>
-                          <Text fontStyle="italic" whiteSpace="pre-wrap">
-                            Explanation: {msg.content.explanation}
-                          </Text>
-                        </Box>
-                      ) : (
-                        // Render the normal message content if it's not a validation confidence message
-                        <Text whiteSpace="pre-wrap">{msg.content}</Text>
-                      )}
-                    </Box>
+                        )}
+                        <Text fontStyle="italic" whiteSpace="pre-wrap">{msg.content.explanation}</Text>
+                      </Box>
+                    ) : (
+                      // Normal message content
+                      <Text whiteSpace="pre-wrap">{msg.content}</Text>
+                    )}
+                  </Box>
 
-                    {msg.role === 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" ml={2} />}
-                  </Flex>
-                ))}
-              </VStack>
+                  {/* Display the user's avatar on the right side for user messages */}
+                  {msg.role === 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" ml={2} />}
+                </Flex>
+              ))}
+            </VStack>
             ) : (
               <Text>No conversation yet</Text>
             )}

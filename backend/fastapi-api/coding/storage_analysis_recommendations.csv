@@ -1,6 +1,6 @@
-storage_account,used_capacity,transactions,ingress,egress,lastAccessDateTime,recommendation
-azmltest0467355361,4967744034.0,720.0,3444400.31,970135.02,N/A,Analyze recent activity—consider reorganizing data.
-czoiuoiuoiuoiuoui,912240.0,716.0,5092305.16,616280.3,N/A,Low capacity and transactions; consider consolidation.
-dbstorage6xgnebmgwml4c,1344986585876.0,720.0,7523096.83,1749196.01,N/A,Review for potential tier downgrades.
-finopshub0275wqmmubtdx2s,3607886915127.0,274.0,16253932.08,29207380.51,N/A,Review policies for less accessed data.
-memnmyresomyvm021307250,38635339470193.0,720.0,806415.97,1879767.01,N/A,Optimize costs by examining access patterns.
+storage_account,used_capacity,transactions,ingress,egress,recommendation
+czoiuoiuoiuoiuoui,912240,704,4983640.11,605682.65,Review data retention policies and consider consolidation.
+finopshub0275wqmmubtdx2s,3653614558237,260,17657547.43,30052679.79,Evaluate retention policies and consider tiered storage.
+mgmtbadc,146437450100,717,5114140.18,611424.45,"Optimize ingress, clean up infrequently accessed data."
+mgmtbdaa,6597512366253,720,2405436.85,3694205.98,Consider tiering and archiving unused data.
+stgaccttest123654,49475281,720,464143.92,592995.58,Consider downgrading or merging accounts.
