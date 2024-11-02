@@ -1,5 +1,6 @@
 import json
 from typing import Optional
+import re
 import asyncio
 import logging
 from enum import Enum
@@ -7,7 +8,7 @@ from pydantic import BaseModel, Field
 import os
 import instructor
 from openai import AzureOpenAI
-
+from typing import List, Optional
 # Initialize Instructor client with AzureOpenAI
 client = instructor.from_openai(AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
@@ -26,22 +27,37 @@ class ConfidenceScore(Enum):
 class ReviewResponse(BaseModel):
     confidence_score: ConfidenceScore
     explanation: str = Field(..., description="Explanation of the confidence score.")
+# Validate subscription ID from the prompt message
+def validate_subscription_id(prompt: str) -> bool:
+    pattern = r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    match = re.search(pattern, prompt)
+    return match is not None
+
+# Search for subscription IDs in the prompt message
+def search_subscription_id(prompt: str) -> List[str]:
+    # Adjusted pattern to match UUIDs (subscription IDs) that may not be surrounded by JSON structure
+    pattern = r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    matches = re.findall(pattern, prompt)
+    return matches
 
 # Function to validate prompt with OpenAI and parse the response
 def validate_prompt_with_instructor(prompt: str, reviewer_name: str = "Reviewer") -> ReviewResponse:
     try:
         logging.info(f"Task sent to {reviewer_name}: {prompt}")
-
+                    # Search for all subscription IDs in the prompt
+        found_subscription_ids = search_subscription_id(prompt)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             response_model=ReviewResponse,
             max_retries=3,
             messages=[
-                {"role": "system", "content": "You are an Azure cost optimization expert."},
+                {"role": "system", "content": "You are an Azure cost optimization expert. Review the prompt and provide feedback."},
                 {
                     "role": "user",
                     "content": (
                         f"{reviewer_name}, please review the following prompt:\n\n\"{prompt}\"\n\n"
+                        "Do not include any additional text outside the JSON object. "
+                        f"Valid subscription IDs found: {found_subscription_ids}. If no IDs are found, the confidence score should be lower.\n\n"
                         "Respond strictly in JSON format:\n{\n"
                         "  \"confidence_score\": <integer between 1-4>,\n"
                         "  \"explanation\": \"<detailed explanation>\"\n"

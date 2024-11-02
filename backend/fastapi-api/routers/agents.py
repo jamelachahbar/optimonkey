@@ -25,24 +25,27 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     client_id = id(websocket)
     connections[client_id] = websocket
+    global chat_status  # Access global chat status
     try:
         while True:
             # Listen for messages from the client
             data = await websocket.receive_text()
             print(f"Received message from client: {data}")
 
-            # Clear queues if starting a new conversation
+            # Start a new conversation if chat_status is not "ongoing"
             if chat_status != "chat_ongoing":
+                chat_status = "chat_ongoing"
                 with print_queue.mutex:
                     print_queue.queue.clear()
                 with user_queue.mutex:
                     user_queue.queue.clear()
 
-            # Trigger the agent conversation based on client input
+            # Trigger the agent conversation
             async for message in start_agent_conversation_stream(data):
-                if message.get("content") == "TERMINATE":  # Use the agent termination signal
-                    result = []  # Initialize result with an empty dictionary
-                    csv_file_path = save_results_to_csv(result)  # Assuming `result` contains recommendations
+                if message.get("content") == "TERMINATE":
+                    # Conversation ended, prepare CSV response
+                    result = []
+                    csv_file_path = save_results_to_csv(result)
                     with open(csv_file_path, 'r') as csv_file:
                         csv_content = csv_file.read()
                     
@@ -54,7 +57,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     }
                     await websocket.send_text(json.dumps(response_message))
+
+                    # Reset chat_status to allow new conversations
+                    chat_status = "ended"
+                    print("Conversation ended. Ready for new messages.")
+                    break  # Exit the loop to close the WebSocket
+
                 else:
+                    # Handle regular messages
                     response_message = {
                         "content": message.get("content"),
                         "role": message.get("role"),
