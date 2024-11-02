@@ -647,8 +647,6 @@ async def start_agent_conversation_stream(prompt: Optional[str] = None):
     # Format a single response message with the icon and explanation
     if confidence_score in [ConfidenceScore.HIGH, ConfidenceScore.EXCELLENT]:
         board_decision = f"{score_icon} FinOps Governing Board Approved - Confidence Score: {confidence_score_value}"
-    elif confidence_score == ConfidenceScore.MEDIUM:
-        board_decision = f"{score_icon} FinOps Governing Board Pending Approval - Confidence Score: {confidence_score_value}"
     else:
         board_decision = f"{score_icon} FinOps Governing Board Rejected - Confidence Score: {confidence_score_value}"
 
