@@ -30,7 +30,7 @@ load_dotenv(dotenv_path=env_path)
 config_list = autogen.config_list_from_json("./agents/OAI_CONFIG_LIST.json")
 llm_config = {
     "config_list": config_list, 
-    "cache_seed": 0,
+    "cache_seed": 43,
     "timeout": 180    
 }
 
@@ -145,9 +145,9 @@ code_executor = autogen.UserProxyAgent(
     human_input_mode="NEVER",
 
     code_execution_config={
-        "last_n_messages": 5,
+        # "last_n_messages": 5,
         "work_dir": "coding",
-        # "use_docker": False,
+        # "use_docker": False
         "use_docker": "python:3.10",
     },
     llm_config=llm_config,
@@ -189,7 +189,7 @@ def query_usage_metrics(
     resource_type: str,  # The Azure resource type
     metric_names: Optional[List[str]] = None,  # Use optional metric_names based on resource type
     aggregation: str = 'Average',  # Default to Average for percentage metrics
-    timespan: str = 'P30D',
+    timespan: str = 'P60D',
     interval: Optional[str] = None  # Dynamically set based on resource type
 ) -> Dict[str, float]:
     """
@@ -493,53 +493,38 @@ register_function(
 
 import csv
 from typing import List, Dict
+from io import StringIO
 
-def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis.csv") -> str:
+def save_results_to_csv(results: List[Dict]) -> str:
     """
-    Saves the analysis results to a CSV file with better error handling and validation.
+    Saves the analysis results to a CSV format and returns it as a string.
 
     Args:
-        results (List[Dict]): The data to save to the CSV. Each dict represents a row in the CSV.
-        filename (str): The name of the CSV file (default: "azure_analysis.csv").
+        results (List[Dict]): The data to save to CSV. Each dict represents a row in the CSV.
 
     Returns:
-        str: A message indicating the results were saved successfully or an error occurred.
+        str: CSV content as a string.
     """
-    # Step 1: Ensure results are valid
     if not results or len(results) == 0:
         return "No results to save."
 
-    # Step 2: Ensure that all rows have consistent keys
+    # Ensure all rows have consistent keys
     keys = results[0].keys()
     for result in results:
         if result.keys() != keys:
             return "Error: Inconsistent data structure in results."
 
-    try:
-        # Step 3: Write the results to a CSV file
-        with open(filename, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.DictWriter(file, fieldnames=keys)
-            writer.writeheader()
-            writer.writerows(results)
+    # Generate CSV content as a string
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=keys)
+    writer.writeheader()
+    writer.writerows(results)
 
-        # return f"Results successfully saved to {filename}"
+    # Save to file as a backup (optional)
+    with open("azure_analysis.csv", mode='w', newline='', encoding='utf-8') as file:
+        file.write(output.getvalue())
 
-    except Exception as e:
-        return f"Error saving results to CSV: {str(e)}"
-
-# Placeholder for results
-results = [
-    {"Resource Name": "Placeholder Resource 1", "Resource Type": "Placeholder Type", "Usage Data": {"Metric 1": 100, "Metric 2": 200}, "Recommendation": "Placeholder Recommendation"},
-    {"Resource Name": "Placeholder Resource 2", "Resource Type": "Placeholder Type", "Usage Data": {"Metric 1": 150, "Metric 2": 250}, "Recommendation": "Placeholder Recommendation"},
-]
-
-# Placeholder for filename
-filename = "azure_analysis.csv"
-
-# Call the function with placeholders
-message = save_results_to_csv(results, filename)
-print(message)
-
+    return output.getvalue()
 # Define the function to save the results to a CSV file
 # def save_results_to_csv(results: List[Dict], filename: str = "azure_analysis_results.csv") -> str:
 #     """
@@ -619,107 +604,110 @@ groupchat = autogen.GroupChat(
 
 # Start the conversation among the agents
 manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
-
-
 import json
-from typing import List, Dict, Optional
+from typing import Optional
 import asyncio
-import time
-from .guidance_validator.optimonkeyvalidator import start_prompt_validation
-# Define the function to start the agent conversation
+import logging
+from datetime import datetime
+from .guidance_validator.optimonkeyvalidator import start_prompt_validation, ConfidenceScore, ReviewResponse
+
 async def start_agent_conversation_stream(prompt: Optional[str] = None):
-    """
-    Starts the agent conversation with the option to use a custom prompt.
-    """
     global chat_status
     chat_status = "Chat ongoing"
 
-    # Use default prompt if none is provided
+    # Default prompt if none is provided
     if not prompt:
         prompt = f"""
         You are a professional Azure consultant.
         Your role is to analyze the Azure environment and find opportunities to save money based on activity and usage.
         
         # Objective:
-        # Your goal is to provide the user with a smooth, efficient and friendly experience by either providing proof data and metrics to justify the list of recommendations 
-        and by providing advice on what to do with the information.
+        Provide proof data and metrics to justify the list of recommendations and advise on actions to take.
         
         # Tools: Azure Resource Graph, Azure Monitor, Azure SDKs.
-        You have a team of assistants to help you with the task. The agents are: Planner, Coder, Critic, and User Proxy.
-        # Planner: Plans the tasks and makes sure everything is on track.
-        # Coder: Writes the code to analyze the Azure environment and save the results to a CSV file.
-        # Critic: Evaluates the quality of the code and provides a score from 1 to 10.
-        # User Proxy: Executes the code and interacts with the system.
-
-        The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access
-        to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, 
-        querying usage metrics, getting log tables and querying these tables and saving results to a CSV file.
-        The Critic will evaluate the quality of the code and provide a score from 1 to 10.
-
+        You have a team of assistants: Planner, Coder, Critic, and User Proxy.
+        
         # Task:
-        Please analyze my Azure environment and find top 5 opportunities to save money based on activity and/or usage. 
-        Provide proof data and metrics to justify this list. Give me only 5 recommendations to work with. 
-        You should start with run kusto query then, query metrics,... 
-        Look for Storage Accounts on these subscriptions or one of these {subscription_id} and save it to a CSV file.
-        Provide advice on what to do with this information and output it along with the results in the CSV file.
-        Make sure you assert these resources are not being used much or not at all based on usage over the last {days} days.
-        Make sure you use the functions in the right order and the code is well structured and easy to understand.
-        Make sure there is a CSV file with the results.
-        Make sure we only have top 5 recommendations.
+        Please analyze my Azure environment and find the top 5 opportunities to save money based on activity and/or usage.
+        Provide advice and output the results to a CSV file.
+        Make sure to include only resources that haven't been used much or not at all over the last 30 days.
         """
 
     # Run prompt validation and await it
-    validation_responses = await start_prompt_validation(prompt)
-    # output validation
-    for response in validation_responses:
-        yield response
-    # Check overall validation based on confidence scores
-    avg_confidence = sum(response.get("confidence_score", 0) for response in validation_responses) / len(validation_responses)
+    validation_response = await start_prompt_validation(prompt)
 
-    if avg_confidence >= 3:
-        print("Prompt validation passed. Proceeding with conversation...")
+    # Access confidence_score and explanation as dictionary values
+    confidence_score = validation_response.get("confidence_score")
+    explanation = validation_response.get("explanation", "No explanation provided")
 
-        time.sleep(5)
-        try:
-            # Start the conversation with the user proxy
-            user_proxy.initiate_chat(
-                manager,
-                message=prompt,  # Use the provided prompt
-                max_turns=2, 
-                max_round=50,
-                clear_history=True
-            )
-            # Stream messages live as they are generated
-            last_message_count = 0
-            
-            while True:
+    # Ensure confidence_score is JSON-serializable (convert to integer or string)
+    confidence_score_value = confidence_score.value if isinstance(confidence_score, ConfidenceScore) else confidence_score
+    score_icon = "✅" if confidence_score in [ConfidenceScore.HIGH, ConfidenceScore.EXCELLENT] else "⚠️" if confidence_score == ConfidenceScore.MEDIUM else "❌"
 
-                current_message_count = len(manager.groupchat.messages)
-                if current_message_count > last_message_count:
-                # Collect the conversation messages to be streamed live as they are generated
-                    for message in manager.groupchat.messages[last_message_count:current_message_count]:
-                        print(f"Streaming message: {message}")  # Log each message
-                        msg_content = {
-                            "content": message.get("content"),  # Extract the message content from the message dict
-                            "role": message.get("role"),
-                            "name": message.get("name"),
-                            "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        }
-                        yield msg_content
-                    last_message_count = current_message_count
-
-                await asyncio.sleep(1)
-        except Exception as e:
-            error_message = {
-                "content": f"An error occurred: {str(e)}",
-                "role": "system",
-                "name": "Error",
-                "timestamp": datetime.now().strftime("%H:%M:%S"),
-            }
-            print(f"Error during agent conversation: {e}")
-            yield json.dumps(error_message)
+    # Format a single response message with the icon and explanation
+    if confidence_score in [ConfidenceScore.HIGH, ConfidenceScore.EXCELLENT]:
+        board_decision = f"{score_icon} FinOps Governing Board Approved - Confidence Score: {confidence_score_value}"
+    elif confidence_score == ConfidenceScore.MEDIUM:
+        board_decision = f"{score_icon} FinOps Governing Board Pending Approval - Confidence Score: {confidence_score_value}"
     else:
-                # output validation
-        for response in validation_responses:
-            yield response
-        print("Prompt validation failed. Please correct the prompt and try again.")
+        board_decision = f"{score_icon} FinOps Governing Board Rejected - Confidence Score: {confidence_score_value}"
+
+    # Yield a single, concise response message
+    yield {
+        "confidence_score": confidence_score_value,
+        "explanation": explanation,
+        "board_decision": board_decision
+    }
+
+    # Only proceed with agent conversation if the score is HIGH or EXCELLENT
+    if confidence_score in [ConfidenceScore.HIGH, ConfidenceScore.EXCELLENT]:
+        try:
+            async for message in initiate_agent_conversation(prompt):
+                yield message  # Yield each message to the client
+        except Exception as e:
+            await handle_stream_error(f"Error during agent conversation: {e}")
+
+
+async def initiate_agent_conversation(prompt):
+    user_proxy.initiate_chat(
+        manager,
+        message=prompt,
+        max_turns=2, 
+        max_round=50,
+        clear_history=True
+    )
+
+    last_message_count = 0
+    while True:
+        current_message_count = len(manager.groupchat.messages)
+        
+        if current_message_count > last_message_count:
+            # Use `async for` to process new messages from the async generator
+            async for message in stream_new_messages(last_message_count, current_message_count):
+                yield message  # Yield each message to be handled by `start_agent_conversation_stream`
+            last_message_count = current_message_count
+
+        await asyncio.sleep(1)
+
+
+async def stream_new_messages(last_message_count, current_message_count):
+    for message in manager.groupchat.messages[last_message_count:current_message_count]:
+        print(f"Streaming message: {message}")
+        msg_content = {
+            "content": message.get("content"),
+            "role": message.get("role"),
+            "name": message.get("name"),
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+        }
+        yield msg_content  # Yield each message to be processed by the calling function
+
+
+async def handle_stream_error(error_message):
+    error_msg = {
+        "content": error_message,
+        "role": "system",
+        "name": "Error",
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+    }
+    print(error_message)
+    yield json.dumps(error_msg)

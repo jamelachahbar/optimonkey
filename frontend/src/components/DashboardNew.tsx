@@ -40,11 +40,8 @@ const DashboardNew: React.FC = () => {
       console.log("Received message from backend:", messageData);
 
       // Handle the case where content is an object
-      let content;
       if (typeof messageData.content === 'object') {
-        content = JSON.stringify(messageData.content, null, 2); // Stringify the object for display
       } else {
-        content = messageData.content; // Keep as is if it's a string
       }
 
       setMessages((prev) => [...prev, { 

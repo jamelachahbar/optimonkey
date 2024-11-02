@@ -1,6 +1,0 @@
-storage_account,used_capacity,transactions,ingress,egress,recommendation
-azmltest0467355361,4963661604.0,719,3474786.44,987784.11,Consider tier adjustment if stable usage.
-czoiuoiuoiuoiuuoi,912240.0,684,4732556.09,588094.53,Review for downgrade or consolidation.
-dbstorage6xgnebmgwml4c,1308947736533.0,716,7468704.31,1531797.02,Evaluate lifecycle; justify costs.
-finopshub0275wqmmubtdx2s,3640724029990.0,261,17318250.55,31919447.34,Consider tiering or archiving.
-memnmyresomyvm021307250,39144149462103.0,720,802599.51,1900734.27,Optimize data management practices.

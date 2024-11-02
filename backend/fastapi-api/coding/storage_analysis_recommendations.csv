@@ -1,6 +1,0 @@
-storage_account,used_capacity,transactions,ingress,egress,recommendation
-czoiuoiuoiuoiuoui,912240,704,4983640.11,605682.65,Review data retention policies and consider consolidation.
-finopshub0275wqmmubtdx2s,3653614558237,260,17657547.43,30052679.79,Evaluate retention policies and consider tiered storage.
-mgmtbadc,146437450100,717,5114140.18,611424.45,"Optimize ingress, clean up infrequently accessed data."
-mgmtbdaa,6597512366253,720,2405436.85,3694205.98,Consider tiering and archiving unused data.
-stgaccttest123654,49475281,720,464143.92,592995.58,Consider downgrading or merging accounts.

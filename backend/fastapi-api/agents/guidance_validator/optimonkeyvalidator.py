@@ -1,216 +1,123 @@
-import re
 import json
-import logging
-from pydantic import BaseModel
-from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 import asyncio
-import openai
+import logging
+from enum import Enum
+from pydantic import BaseModel, Field
 import os
-from typing import List, Optional
-
-# Initialize OpenAI API
-openai.api_type = "azure"
-openai.api_version = "2023-09-15-preview"  # Or the version you're using
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-openai.azure_endpoint = os.getenv("AZURE_OPENAI_API_BASE")
-
-# logging.basicConfig(level=logging.INFO)
-
-# Define the response structure for validation
-class Response(BaseModel):
-    confidence_score: int
-    explanation: str
-
-# Validate whether the response contains a valid JSON object
-def is_valid_json(json_str: str) -> bool:
-    try:
-        json.loads(json_str)
-        return True
-    except ValueError:
-        return False
-
-# Function to validate the prompt using Azure OpenAI API
+import instructor
 from openai import AzureOpenAI
-client = AzureOpenAI(
+
+# Initialize Instructor client with AzureOpenAI
+client = instructor.from_openai(AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     api_version="2024-02-15-preview",
     azure_endpoint=os.getenv("AZURE_OPENAI_API_BASE")
-)
+))
 
-# Validate subscription ID from the prompt message
-def validate_subscription_id(prompt: str) -> bool:
-    pattern = r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
-    match = re.search(pattern, prompt)
-    return match is not None
+# Enum for Confidence Levels
+class ConfidenceScore(Enum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    EXCELLENT = 4
 
-# Search for subscription IDs in the prompt message
-def search_subscription_id(prompt: str) -> List[str]:
-    # Adjusted pattern to match UUIDs (subscription IDs) that may not be surrounded by JSON structure
-    pattern = r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
-    matches = re.findall(pattern, prompt)
-    return matches
+# Define the structured response model
+class ReviewResponse(BaseModel):
+    confidence_score: ConfidenceScore
+    explanation: str = Field(..., description="Explanation of the confidence score.")
 
-# Use the validation function on subscription IDs in the guidance validation function
-def validate_prompt_with_guidance(prompt: str, reviewer_name: str) -> dict:
+# Function to validate prompt with OpenAI and parse the response
+def validate_prompt_with_instructor(prompt: str, reviewer_name: str = "Reviewer") -> ReviewResponse:
     try:
         logging.info(f"Task sent to {reviewer_name}: {prompt}")
 
-        # Search for all subscription IDs in the prompt
-        found_subscription_ids = search_subscription_id(prompt)
-        has_subscription_id = len(found_subscription_ids) > 0
-
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Ensure you use the correct model name
+            model="gpt-4o-mini",
+            response_model=ReviewResponse,
+            max_retries=3,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are an Azure cost optimization expert."
-                },
+                {"role": "system", "content": "You are an Azure cost optimization expert."},
                 {
                     "role": "user",
                     "content": (
-                        f"{reviewer_name}, please review the following prompt for Azure cost optimization:\n\n"
-                        f"\"{prompt}\"\n\n"
-                        f"Make sure to respond strictly in the following JSON format:\n\n"
-                        "{\n"
-                        "  \"confidence_score\": <integer between 0-5>,\n"
-                        "  \"explanation\": \"<your explanation here>\"\n"
-                        "}\n\n"
-                        "Do not include any additional text outside the JSON object. "
-                        f"Valid subscription IDs found: {found_subscription_ids}. If no IDs are found, the confidence score should be lower.\n\n"
-                        "Example response:\n"
-                        '{\n'
-                        '  "confidence_score": 4,\n'
-                        '  "explanation": "Your explanation here."\n'
-                        '}'
-                    )
-                }
-            ]
-        )
-
-        response_text = response.choices[0].message.content.strip()
-        logging.info(f"{reviewer_name} raw response: {response_text}")
-
-        # Clean up the response (optional)
-        response_text = response_text.replace("\n", "").strip()  # Remove newlines
-
-        # Validate the JSON format
-        if is_valid_json(response_text):
-            validation_response = json.loads(response_text)
-            # Adjust confidence score if no subscription IDs were found
-            if not has_subscription_id:
-                validation_response['confidence_score'] = max(0, validation_response['confidence_score'] - 2)  # Decrease score if no ID
-
-            return validation_response
-        else:
-            logging.error(f"{reviewer_name} returned an invalid JSON response.")
-            return {
-                "confidence_score": 0,
-                "explanation": "Invalid JSON format. Please provide a valid JSON response without any additional text."
-            }
-
-    except Exception as e:
-        logging.error(f"Validation error in {reviewer_name}: {str(e)}")
-        return {"confidence_score": 0, "explanation": str(e)}
-
-# Run guidance in a separate thread
-async def run_guidance_in_executor(prompt: str, reviewer_name: str):
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        return await loop.run_in_executor(pool, validate_prompt_with_guidance, prompt, reviewer_name)
-
-# Summarize explanations from multiple reviewers
-def summarize_explanations(explanations: List[str]) -> str:
-    try:
-        prompt = (
-            "Please provide a concise summary of the following reviewers' explanations:\n\n"
-            + "\n\n".join([f"Reviewer {i+1}: {exp}" for i, exp in enumerate(explanations)])
-            + "\n\nSummary:"
-        )
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Ensure you use the correct model name
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an assistant that summarizes text."
+                        f"{reviewer_name}, please review the following prompt:\n\n\"{prompt}\"\n\n"
+                        "Respond strictly in JSON format:\n{\n"
+                        "  \"confidence_score\": <integer between 1-4>,\n"
+                        "  \"explanation\": \"<detailed explanation>\"\n"
+                        "}"
+                    ),
                 },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
             ],
-            temperature=0.5,
         )
 
-        summary = response.choices[0].message.content.strip()
-        return summary
+        # Check if the response is already in the form of a ReviewResponse object
+        if isinstance(response, ReviewResponse):
+            # Directly return the ReviewResponse as it's already structured
+            return response
+
+        # Debugging: Log the type and structure of the response to handle other cases
+        print("Response Type:", type(response))
+        print("Response Content:", response)
+
+        # Handle case where response might be a dict
+        if isinstance(response, dict):
+            if "choices" in response and response["choices"]:
+                response_data = json.loads(response["choices"][0]["message"]["content"])
+            else:
+                # If there's no 'choices', assume response data is directly in response
+                response_data = response
+        else:
+            logging.error("Invalid response structure; response does not contain expected data.")
+            return ReviewResponse(confidence_score=ConfidenceScore.LOW, explanation="Invalid response format or data not found.")
+
+        # Extract the confidence score and explanation from the parsed data
+        confidence_score_value = response_data.get("confidence_score", 0)
+        explanation = response_data.get("explanation", "No explanation provided")
+
+        # Map the integer confidence_score_value to the ConfidenceScore enum
+        confidence_score = ConfidenceScore(confidence_score_value)
+
+        return ReviewResponse(confidence_score=confidence_score, explanation=explanation)
 
     except Exception as e:
-        logging.error(f"Error during summarization: {e}")
-        return "An error occurred during summarization."
+        logging.error(f"Validation error for {reviewer_name}: {str(e)}")
+        return ReviewResponse(confidence_score=ConfidenceScore.LOW, explanation=str(e))
 
-# Main function to start the conversation and validate the prompt
+# Main function to start prompt validation with a single reviewer
 async def start_prompt_validation(prompt: Optional[str] = None):
-    global chat_status
-    chat_status = "Chat ongoing"
-
     if not prompt:
-        prompt = """
-        You are a professional Azure consultant and a FinOps guru.
-        Your role is to analyze the prompt and user message and ensure it is about finding opportunities to 
-        save cost in Azure based on activity and usage. It should also content clear goals and objectives for 
-        the cost optimization process. The prompt should be clear and concise, and the user message should 
-        provide relevant information about the Azure environment and the cost optimization goals.       
-        """
-        
+        prompt = (
+            "Your role is to analyze the Azure environment for cost savings based on activity and usage. "
+            "The prompt should be clear, with goals and objectives related to cost optimization."
+        )
+
     print(f"Starting validation with prompt: {prompt}")
     try:
-        reviewer1_response = await run_guidance_in_executor(prompt, "Reviewer1")
-        reviewer2_response = await run_guidance_in_executor(prompt, "Reviewer2")
-        reviewer3_response = await run_guidance_in_executor(prompt, "Reviewer3")
+        # Run validation with one reviewer and 3 retries
+        validation_response = await asyncio.to_thread(validate_prompt_with_instructor, prompt, "Reviewer")
 
-        logging.info(f"Reviewer1 Response: {reviewer1_response}")
-        logging.info(f"Reviewer2 Response: {reviewer2_response}")
-        logging.info(f"Reviewer3 Response: {reviewer3_response}")
+        # Check if the validation response is valid
+        if validation_response and isinstance(validation_response, ReviewResponse):
+            confidence_score = validation_response.confidence_score
+            explanation = validation_response.explanation
 
-        validation_responses = [reviewer1_response, reviewer2_response, reviewer3_response]
-        
-        # Check if reviewer response is a dict and contains the expected fields
-        if all(isinstance(resp, dict) for resp in validation_responses):
-            confidence_scores = [
-                resp.get("confidence_score", 0) for resp in validation_responses
-            ]
-            avg_confidence = sum(confidence_scores) / len(confidence_scores)
-            explanations = [
-                resp.get("explanation", "") for resp in validation_responses
-            ]
+            # Display results and handle response based on confidence score
+            icon = "✅" if confidence_score in [ConfidenceScore.HIGH, ConfidenceScore.EXCELLENT] else "⚠️" if confidence_score == ConfidenceScore.MEDIUM else "❌"
+            print(f"{icon} Confidence Score: {confidence_score.name} - {explanation}")
 
-            # Display the validation results with icons
-            for idx, response in enumerate(validation_responses):
-                confidence_score = response.get("confidence_score", 0)
-                explanation = response.get("explanation", "")
-                
-                # Determine the icon based on the confidence score
-                if confidence_score >= 4:
-                    icon = "✅"  # Check mark for high confidence
-                elif confidence_score >= 2:
-                    icon = "⚠️"  # Warning icon for moderate confidence
-                else:
-                    icon = "❌"  # Cross mark for low confidence
-
-                print(f"Reviewer {idx + 1}: {icon} Confidence Score: {confidence_score} - {explanation}")
-
-            if avg_confidence >= 3:
-                print(f"✅ FinOps Governing Board Approved - Valid prompt.\nAverage Confidence Score: {avg_confidence:.1f}")
-                return validation_responses  # Return the responses for further processing
+            if confidence_score in [ConfidenceScore.HIGH, ConfidenceScore.EXCELLENT]:
+                print(f"✅ FinOps Governing Board Approved - Confidence Score: {confidence_score.name}")
+                # Return success response and stop further error handling
+                return {"confidence_score": confidence_score, "explanation": explanation}
             else:
-                print(f"❌ FinOps Governing Board Rejected - Average confidence too low.\nAverage Confidence Score: {avg_confidence:.1f}")
-                return validation_responses  # Return the responses even if they failed for logging
+                print(f"❌ FinOps Governing Board Rejected - Confidence Score: {confidence_score.name}")
+                return {"confidence_score": confidence_score, "explanation": explanation}
         else:
-            logging.error("Unexpected response format from reviewers.")
-            return [{"confidence_score": 0, "explanation": "Invalid response format."}]
+            # If the response is invalid, log and handle it accordingly
+            logging.error("Validation failed: No valid response received.")
+            return {"confidence_score": ConfidenceScore.LOW, "explanation": "No valid response received from validation."}
 
     except Exception as e:
         logging.error(f"Error during validation: {e}")
-        return [{"confidence_score": 0, "explanation": str(e)}]  
+        return {"confidence_score": ConfidenceScore.LOW, "explanation": str(e)}

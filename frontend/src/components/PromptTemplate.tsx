@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, SimpleGrid, Text, Flex, Icon } from '@chakra-ui/react';
+import { Box, SimpleGrid, Text, Icon } from '@chakra-ui/react';
 import { FaServer, FaDatabase, FaHdd, FaNetworkWired, FaInfinity } from 'react-icons/fa'; // Import some icons for illustration
 
 // const workspace_id = "fdd39622-ae5a-4eb8-987b-14ae8aad63dd"
@@ -167,7 +167,7 @@ const prompts = [
 
 const PromptTemplate: React.FC<PromptTemplateProps> = ({ onSelectPrompt }) => {
   return (
-    <SimpleGrid columns={[1, 2, 3, 4]} spacing={6} padding={4}>
+    <SimpleGrid columns={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing={6} p={4}>
       {prompts.map((template, index) => (
         <Box
           key={index}
@@ -175,8 +175,6 @@ const PromptTemplate: React.FC<PromptTemplateProps> = ({ onSelectPrompt }) => {
           shadow="lg"
           borderWidth="1px"
           borderRadius="md"
-          width="100%"
-          height="100%"
           onClick={() => onSelectPrompt(template.prompt)}
           cursor="pointer"
           transition="all 0.3s ease"
@@ -186,16 +184,18 @@ const PromptTemplate: React.FC<PromptTemplateProps> = ({ onSelectPrompt }) => {
             shadow: 'xl',
             color: 'white',
           }}
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          textAlign="center"
         >
-          <Flex direction="column" align="center" justify="center" height="100%">
-            <Icon as={template.icon} w={10} h={10} mb={4} color="teal.600" />
-            <Text fontSize="md" fontWeight="bold">
-              {template.title}
-            </Text>
-            <Text mt={2} fontSize="sm" textAlign="center">
-              {template.description}
-            </Text>
-          </Flex>
+          <Icon as={template.icon} w={10} h={10} mb={4} color="teal.600" />
+          <Text fontSize="md" fontWeight="bold" mb={2}>
+            {template.title}
+          </Text>
+          <Text fontSize="sm">
+            {template.description}
+          </Text>
         </Box>
       ))}
     </SimpleGrid>

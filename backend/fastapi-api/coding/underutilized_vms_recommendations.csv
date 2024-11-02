@@ -1,0 +1,6 @@
+vm_name,cpu_usage,network_usage,disk_usage,recommendation
+VM-LINUX-01,0%,None,None,Shut down or deallocate if not in use
+vmwithhibernationmode,0%,None,None,Shut down or deallocate if not in use
+vm-forcedetachdemo1-1,0%,None,None,Shut down or deallocate if not in use
+vm-forcedetachdemo1-2,0%,None,None,Shut down or deallocate if not in use
+vm-forcedetachdemo1-3,0%,None,None,Shut down or deallocate if not in use

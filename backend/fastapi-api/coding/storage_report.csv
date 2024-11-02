@@ -1,6 +1,0 @@
-storage_account,used_capacity,transactions,ingress,egress,lastAccessDateTime,recommendation
-azmltest0467355361,4965574341.0,720,3457652.28,988205.39,2023-09-01,Optimize ingress and cleanup infrequently accessed data.
-czoiuoiuoiuoiuoui,912240.0,720,5158268.46,620835.99,2023-09-01,Consider downgrading or consolidating data.
-dbstorage6xgnebmgwml4c,1327957746807.0,720,7252440.74,1626455.9,2023-09-01,Migrate infrequently accessed data to cooler tiers.
-finopshub0275wqmmubtdx2s,3623704089898.0,252,16596804.81,28583940.37,2023-09-01,Evaluate retention policy for data.
-memnmyresomyvm021307250,38885269736600.0,720,804756.52,1894598.73,2023-09-01,Review data allocation for lifecycle management.

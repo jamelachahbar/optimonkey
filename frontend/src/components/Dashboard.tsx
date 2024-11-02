@@ -1,287 +1,276 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
-  Heading,
   VStack,
-  Button,
-  Spinner,
   Flex,
-  Text,
-  useToast,
   Avatar,
-  Textarea,
-  useDisclosure,
+  Text,
+  Input,
+  Button,
+  IconButton,
+  SimpleGrid,
+  Heading,
   useColorMode,
   useColorModeValue,
 } from '@chakra-ui/react';
 import { MoonIcon, SunIcon } from '@chakra-ui/icons';
-import PromptTemplate from './PromptTemplate';
-import { CheckCircleIcon, CloseIcon } from '@chakra-ui/icons';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import PromptTemplate from '../components/PromptTemplate';
 
 interface Message {
-  content: any | { confidence_score: number; explanation: string };
-  role: string;
+  user: string;
   name: string;
-  timestamp?: string;
+  message: string | { confidence_score?: number; explanation?: string; content?: string } | object;
+  timestamp: string;
+  role: string;
 }
 
 const Dashboard: React.FC = () => {
-  const [userMessage, setUserMessage] = useState<string>('');
-  const [conversation, setConversation] = useState<Message[]>([]);
-  const [webSocket, setWebSocket] = useState<WebSocket | null>(null); // WebSocket state
-  const { isOpen } = useDisclosure();  
-  const toast = useToast();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [userInput, setUserInput] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [ws, setWs] = useState<WebSocket | null>(null);
   const { toggleColorMode, colorMode } = useColorMode();
-  const bgColor = useColorModeValue('gray.100', 'gray.800');
-  const API_BASE_URL = 'http://localhost:8081/api';
-  const [loadingScore, setLoadingScore] = useState<boolean>(true);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const cardBgColor = useColorModeValue('white', 'gray.700');
+  const textColor = useColorModeValue('blue.500', 'blue.300');
+  const codeStyle = colorMode === 'light' ? vs : vscDarkPlus;
 
   useEffect(() => {
-    // Initialize WebSocket connection
-    const ws = new WebSocket('ws://localhost:8081/ws/conversation');
-    setWebSocket(ws);
+    const websocket = new WebSocket('ws://localhost:8081/ws/conversation');
+    setWs(websocket);
 
-    ws.onopen = () => {
-      console.log("WebSocket connection established.");
-      toast({
-        title: 'WebSocket Connected',
-        description: 'Connection to the server established.',
-        status: 'info',
-        duration: 2000,
-        isClosable: true,
-      });
+    websocket.onopen = () => {
+        console.log("WebSocket connection established.");
     };
-    ws.onmessage = (event) => {
-      const messageData = JSON.parse(event.data);
-      // Check if it's a normal message or validation message
-      if (messageData.content && typeof messageData.content === 'object' && 'confidence_score' in messageData.content) {
-        setLoadingScore(true); // Start spinner for the score
-        setTimeout(() => {
-          setLoadingScore(false); // Simulate score calculation delay
-        }, 2000); // Adjust the delay if necessary
-      
-        // Validation message, format differently
-        const formattedMessage = {
-          ...messageData,
-          content: `Confidence Score: ${messageData.content.confidence_score}\nExplanation: ${messageData.content.explanation}`,
+
+    websocket.onmessage = (event) => {
+        const messageData = JSON.parse(event.data);
+        console.log("Received message from backend:", messageData);
+
+        // Detect if message content is CSV-like and add a type property
+        const isCSV = typeof messageData.content === 'string' && messageData.content.includes(',') && /\n/.test(messageData.content);
+        const messageWithType = {
+            ...messageData,
+            type: isCSV ? 'csv' : 'text'  // Add 'csv' or 'text' type based on content
         };
-        setConversation((prev) => [...prev, formattedMessage]);
-      } else {
-        // Normal message, just add to the conversation
-        setConversation((prev) => [...prev, messageData]);
-      }
+
+        setMessages((prev) => [
+            ...prev,
+            { 
+                user: messageWithType.name, 
+                name: messageWithType.content.name || 'Agent', 
+                message: messageWithType.content, 
+                timestamp: messageWithType.timestamp, 
+                role: messageWithType.role,
+                type: messageWithType.type  // Include the type property
+            }
+        ]);
     };
 
-
-    ws.onclose = () => {
-      console.log("WebSocket connection closed.");
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket Error:', error);
-      toast({
-        title: 'WebSocket Error',
-        description: 'Error occurred in WebSocket connection.',
-        status: 'error',
-        duration: 2000,
-        isClosable: true,
-      });
+    websocket.onclose = () => {
+        console.log("WebSocket connection closed.");
     };
 
     return () => {
-      ws.close(); // Clean up the WebSocket connection on component unmount
+        websocket.close();
     };
-  }, []);
+}, []);
 
-  const sendMessage = () => {
-    const trimmedMessage = userMessage.trim();
-    if (trimmedMessage === '' || !webSocket || webSocket.readyState !== WebSocket.OPEN) return;
 
-    const newMessage = {
-      content: trimmedMessage,
-      role: 'user',
-      name: 'You',
-      timestamp: new Date().toLocaleTimeString(),
-    };
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
 
-    // Send message to the WebSocket server
-    webSocket.send(JSON.stringify({ message: trimmedMessage }));
-
-    // Update conversation with the new message
-    setConversation((prev) => [...prev, newMessage]);
-    setUserMessage(''); // Clear input after sending
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUserInput(e.target.value);
   };
 
-  // Handle input changes
-  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setUserMessage(e.target.value);
-  };
-
-  // Send message when pressing "Enter"
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault(); // Prevents newline
-      sendMessage();
+  const handleSend = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const message = JSON.stringify({ message: userInput });
+      ws.send(message);
+      setMessages((prev) => [
+        ...prev,
+        {
+          user: 'You',
+          name: 'You',
+          message: userInput,
+          timestamp: new Date().toLocaleTimeString(),
+          role: 'user'
+        }
+      ]);
+      setUserInput('');
+    } else {
+      console.error('WebSocket is not open');
     }
   };
-  const startAgents = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/start-agents`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-  
-      const result = await response.json();
-      if (result.status === 'chat_ongoing') {
-        toast({
-          title: 'Agents Started',
-          description: 'Agents have started successfully.',
-          status: 'success',
-          duration: 3000,
-          isClosable: true,
-        });
-      } else {
-        throw new Error(result.error || 'Failed to start agents');
-      }
-    } catch (error) {
-      console.error('Error starting agents:', error);
-      toast({
-        title: 'Error',
-        description: 'There was an error starting the agents.',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-    }
-  };
-  // Handle selection from the prompt template
+
   const handlePromptSelection = (prompt: string) => {
-    setUserMessage(prompt);
-    sendMessage(); // Automatically send the selected prompt
+    setUserInput(prompt);
   };
+
+  const renderMessageContent = (msgContent: any, role: string, type: string = 'text') => {
+    if (role === 'agent' && type === 'csv') {
+        // CSV handling remains the same
+    }
+
+    // JSON-like content rendering
+    if (typeof msgContent === 'string' && msgContent.trim().startsWith('{') && msgContent.trim().endsWith('}')) {
+        try {
+            const jsonObject = JSON.parse(msgContent);
+            return (
+                <Box overflowX="auto">
+                    <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
+                        {JSON.stringify(jsonObject, null, 2)}
+                    </pre>
+                </Box>
+            );
+        } catch (error) {
+            return <ReactMarkdown remarkPlugins={[remarkGfm]}>{msgContent}</ReactMarkdown>;
+        }
+    }
+
+    // Markdown rendering for other plain text content
+    if (typeof msgContent === 'string') {
+        return <ReactMarkdown remarkPlugins={[remarkGfm]}>{msgContent}</ReactMarkdown>;
+    }
+
+    // Object handling for structured agent responses
+    if (msgContent && typeof msgContent === 'object') {
+        return (
+            <Box>
+                {msgContent.confidence_score !== undefined && (
+                    <Text fontWeight="bold">
+                        Confidence Score: {msgContent.confidence_score}
+                    </Text>
+                )}
+                {msgContent.explanation && (
+                    <Text fontStyle="italic">Explanation: {msgContent.explanation}</Text>
+                )}
+                {msgContent.content ? (
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                            code({ inline, className, children, ...props }: {
+                              inline?: boolean;
+                              className?: string;
+                              children?: React.ReactNode;
+                              [key: string]: any;
+                            }) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                return !inline && match ? (
+                                    <SyntaxHighlighter style={codeStyle} language={match[1]} PreTag="div" {...props}>
+                                        {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                ) : (
+                                    <code className={className} {...props}>
+                                        {children}
+                                    </code>
+                                );
+                            },
+                        }}
+                    >
+                        {msgContent.content}
+                    </ReactMarkdown>
+                ) : (
+                    Object.keys(msgContent).map((key) =>
+                        key !== 'confidence_score' && key !== 'explanation' && key !== 'content' ? (
+                            <Text key={key}>
+                                <strong>{key}:</strong> {JSON.stringify(msgContent[key])}
+                            </Text>
+                        ) : null
+                    )
+                )}
+            </Box>
+        );
+    }
+
+    // Render user messages as plain text or Markdown without special formatting
+    return typeof msgContent === 'string' ? (
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msgContent}</ReactMarkdown>
+    ) : (
+        <Text>{JSON.stringify(msgContent)}</Text>
+    );
+};
+
+
+
+  
 
   return (
-    <Flex h="100vh" direction="column">
-      <Flex direction="row" flex="1">
-        <Box w={{ base: '20%', md: '15%' }} bg={bgColor} p={4} borderRight="1px solid #e2e8f0">
-          <Heading size="sm" mb={6}>Home</Heading>
-          <VStack align="stretch" spacing={4}>
-            <Button variant="link">Model Catalog</Button>
-            <Button variant="link">Model Benchmarks</Button>
-            <Button variant="link">Azure OpenAI</Button>
-            <Button variant="link">AI Services</Button>
-          </VStack>
-        </Box>
+    <Flex h="100vh" direction="column" bg={bgColor}>
+      {/* Prompt Template Section */}
+      <Box p={4} margin={2}>
+        <Heading as="h3" size="md" textAlign="center" mb={4}>
+          Prompt Templates
+        </Heading>
+        <SimpleGrid columns={{ base: 1, sm: 1, md: 1, lg: 1 }} spacing={6} justifyItems="center">
+          <PromptTemplate onSelectPrompt={handlePromptSelection} />
+        </SimpleGrid>
+      </Box>
 
-        <Box w={{ base: '80%', md: '85%' }} p={6} position="relative" flex="1">
-          <Flex justifyContent="space-between" alignItems="center" mb={6}>
-            <Flex alignItems="center">
-              <Button
-                mr={4}
-                colorScheme="teal"
-                onClick={startAgents} // Now triggers the startAgents function
-                disabled={!webSocket || webSocket.readyState !== WebSocket.OPEN}
-              >
-                Start Chat
-              </Button>
-              <Button onClick={toggleColorMode}>
-                {colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
-              </Button>
+      {/* Message Display Section */}
+      <VStack spacing={4} align="stretch" p={6} overflowY="auto" flex="1" overflowX="hidden">
+        {messages.map((msg, index) => (
+          <Flex
+            key={index}
+            alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
+            p={4}
+            boxShadow="md"
+            maxWidth="60%"
+            flexDir="column"
+            alignItems="flex-start"
+            bg={msg.role === 'user' ? 'blue.100' : cardBgColor}
+            borderRadius="md"
+            overflowWrap="break-word"
+          >
+            <Flex align="center" mb={2}>
+              {msg.role !== 'user' && (
+                <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />
+              )}
+              <Text fontWeight="bold" color={textColor}>
+                {msg.name ? `${msg.name}` : 'Agent'} • {msg.timestamp}
+              </Text>
             </Flex>
-            <Heading as="h3" size="lg">OptiMonkey Dashboard</Heading>
-          </Flex>
-
-          {!isOpen && (
-            <Box mb={6}>
-              <PromptTemplate onSelectPrompt={handlePromptSelection} />
+            <Box p={3} bg={bgColor} borderRadius="md" w="full" display="flex" overflowX="auto">
+              {renderMessageContent(msg.message, msg.role)}
             </Box>
-          )}
+          </Flex>
+        ))}
+        <div ref={messagesEndRef} />
+      </VStack>
 
-          <Box flex="1" overflowY="auto" p={4} mt={4} maxH="60vh">
-            {conversation.length > 0 ? (
-            <VStack spacing={4} align="stretch">
-              {conversation.map((msg, index) => (
-                <Flex
-                  key={index}
-                  alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
-                  p={3}
-                  boxShadow="md"
-                  maxWidth="80%"
-                  flexDir="row"
-                  alignItems="center"
-                >
-                  {/* Display the avatar for non-user messages */}
-                  {msg.role !== 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" mr={2} />}
-                  
-                  <Box>
-                    {/* Display the agent's name and the timestamp */}
-                    <Text fontWeight="bold" mb={2}>
-                      {msg.name ? `${msg.name}` : 'Agent'} • {msg.timestamp}
-                    </Text>
-
-                    {/* Conditionally render validation score with spinner */}
-                    {msg.content.confidence_score !== undefined ? (
-                      <Box>
-                        {loadingScore ? (
-                          <Flex alignItems="center" mb={2}>
-                            <Spinner size="sm" color="blue.500" />
-                            <Text ml={2}>Calculating validation score...</Text>
-                          </Flex>
-                        ) : (
-                          <Flex alignItems="center" mb={2}>
-                            <Text fontWeight="bold">Confidence Score: {msg.content.confidence_score}</Text>
-                            {msg.content.confidence_score === 0 ? (
-                              <CloseIcon ml={2} color="red.500" fontSize="xl" />
-                            ) : (
-                              <CheckCircleIcon ml={2} color="green.500" fontSize="xl" />
-                            )}
-                          </Flex>
-                        )}
-                        <Text fontStyle="italic" whiteSpace="pre-wrap">{msg.content.explanation}</Text>
-                      </Box>
-                    ) : (
-                      // Normal message content
-                      <Text whiteSpace="pre-wrap">{msg.content}</Text>
-                    )}
-                  </Box>
-
-                  {/* Display the user's avatar on the right side for user messages */}
-                  {msg.role === 'user' && <Avatar size="sm" name={msg.name} bg="gray.500" ml={2} />}
-                </Flex>
-              ))}
-            </VStack>
-            ) : (
-              <Text>No conversation yet</Text>
-            )}
-          </Box>
-        </Box>
-      </Flex>
-
-      <Box mt={4} width="100%" display="flex" alignItems="center" position="sticky" bottom={0} left={0} p={4} bg={bgColor}>
-        <Box flex="1" maxW="60%" mx="auto" display="flex" alignItems="center">
-          <Textarea
-            ref={textareaRef}
-            value={userMessage}
-            onChange={handleTextareaChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Type your message..."
-            size="md"
-            resize="none"
-            maxH="200px"
-            minH="50px"
-            mr={2}
-            bg="transparent"
-            border="1px solid"
-            borderColor={colorMode === 'light' ? 'gray.300' : 'gray.600'}
-            disabled={!webSocket || webSocket.readyState !== WebSocket.OPEN}
-          />
-          <Button colorScheme="teal" onClick={sendMessage} disabled={!webSocket || webSocket.readyState !== WebSocket.OPEN}>
-            Send
-          </Button>
-        </Box>
+      {/* Input and Theme Toggle Section */}
+      <Box
+        display="flex"
+        alignItems="center"
+        p={4}
+        bg={bgColor}
+        borderTop="1px solid"
+        borderColor="gray.300"
+      >
+        <Input
+          width="80%"
+          type="text"
+          value={userInput}
+          onChange={handleInputChange}
+          placeholder="Type your message..."
+        />
+        <Button colorScheme="blue" onClick={handleSend} mr={2}>
+          Send
+        </Button>
+        <IconButton
+          aria-label="Toggle dark mode"
+          icon={colorMode === 'light' ? <MoonIcon /> : <SunIcon />}
+          onClick={toggleColorMode}
+        />
       </Box>
     </Flex>
   );
