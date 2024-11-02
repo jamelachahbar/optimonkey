@@ -103,6 +103,8 @@ async def run_chat():
         }
         for websocket in connections.values():
             await websocket.send_text(json.dumps(error_message))
+    finally:
+        chat_status = "ended"  # Ensure the status is reset once the chat is finished
 
 @router.post("/start-agents")
 async def start_agents(background_tasks: BackgroundTasks):
