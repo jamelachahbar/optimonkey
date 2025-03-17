@@ -1,8 +1,7 @@
-import { Box, Button, Heading, Text, useColorMode, Image, Center } from '@chakra-ui/react';
+import { Box, Button, Heading, Text, Image, Center } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 
 const LandingPage: React.FC = () => {
-  const { colorMode, toggleColorMode } = useColorMode();
   const navigate = useNavigate();
 
   return (

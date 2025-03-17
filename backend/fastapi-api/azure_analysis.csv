@@ -1,6 +1,0 @@
-Resource Name,Usage Metrics,Recommendation,Justification,Advice
-czoiuoiuoiuoiuoui,"UsedCapacity: 942648.0, Transactions: 717.0",Consider downgrading performance tier or consolidating data if not mission-critical.,Low transactions with significant storage.,Review stored data for redundancy.
-finopshub0275wqmmubtdx2s,"UsedCapacity: 4088291814462.0, Transactions: 237.0",Evaluate retention policy for data.,Moderate transactions but high use of premium storage tier.,Move less accessed data to cheaper storage options.
-mgmtbadc,"UsedCapacity: 151110124590.0, Transactions: 716.0",Optimize ingress and cleanup infrequently accessed data.,High ingress vs. egress disparity.,Conduct regular audits to manage storage efficiently.
-mgmtbdaa,"UsedCapacity: 6991803664272.0, Transactions: 744.0",Consider tiering or archive options for unused data.,Large capacity use with minimal access.,Balance data availability needs with storage costs.
-stgaccttest123654,"UsedCapacity: 191118282.0, Transactions: 744.0",Evaluate data lifecycle management.,Consistent low transactions suggest potential over-allocation.,Identify stale data and set rules for automatic deletion.

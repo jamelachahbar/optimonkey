@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime
 from fastapi import APIRouter, Response, WebSocket, WebSocketDisconnect, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
-from agents.optimonkeyagents import start_agent_conversation_stream, save_results_to_csv
+from agents.optimonkeyagents import start_agent_conversation_stream, initiate_final_recommendation
 
 # Initialize APIRouter for organizing routes
 router = APIRouter()
@@ -25,86 +25,144 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     client_id = id(websocket)
     connections[client_id] = websocket
-    global chat_status  # Access global chat status
+    global chat_status
+    conversation_data = []
+
     try:
-        while True:
-            # Listen for messages from the client
-            data = await websocket.receive_text()
-            print(f"Received message from client: {data}")
+        data = await websocket.receive_text()  # Client's initial message
+        print(f"Received from client: {data}")
 
-            # Start a new conversation if chat_status is not "ongoing"
-            if chat_status != "chat_ongoing":
-                chat_status = "chat_ongoing"
-                with print_queue.mutex:
-                    print_queue.queue.clear()
-                with user_queue.mutex:
-                    user_queue.queue.clear()
+        async for message in start_agent_conversation_stream(data):
+            print(f"Sending message to frontend: {message}")  # Debug log
+            conversation_data.append(message)
+            await websocket.send_text(json.dumps(message))
 
-            # Trigger the agent conversation
-            async for message in start_agent_conversation_stream(data):
-                if message.get("content") == "TERMINATE":
-                    # Conversation ended, prepare CSV response
-                    result = []
-                    csv_file_path = save_results_to_csv(result)
-                    with open(csv_file_path, 'r') as csv_file:
-                        csv_content = csv_file.read()
-                    
-                    response_message = {
-                        "content": csv_content,
-                        "role": "agent",
-                        "name": "Executor",
-                        "type": "csv",
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    }
-                    await websocket.send_text(json.dumps(response_message))
+        # Final recommendations
+        if conversation_data:
+            print(f"Passing conversation data to final recommendation: {conversation_data}")
+            async for final_message in initiate_final_recommendation(conversation_data):
+                print(f"Final recommendation message: {final_message}")
+                await websocket.send_text(json.dumps(final_message))
 
-                    # Reset chat_status to allow new conversations
-                    chat_status = "ended"
-                    print("Conversation ended. Ready for new messages.")
-                    break  # Exit the loop to close the WebSocket
+        chat_status = "ended"
 
-                else:
-                    # Handle regular messages
-                    response_message = {
-                        "content": message.get("content"),
-                        "role": message.get("role"),
-                        "name": message.get("name"),
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    }
-                    await websocket.send_text(json.dumps(response_message))
     except WebSocketDisconnect:
         print(f"Client {client_id} disconnected")
         del connections[client_id]
+        chat_status = "ended"
+    except Exception as e:
+        print(f"Error in WebSocket: {e}")
+        await websocket.send_text(json.dumps({"content": f"Error: {str(e)}", "role": "system", "name": "Error"}))
+    finally:
+        del connections[client_id]
+        chat_status = "ended"
+        print(f"WebSocket connection {client_id} closed.")
+
+
+
+# OLD
+# @router.websocket("/ws/conversation")
+# async def websocket_endpoint(websocket: WebSocket):
+#     await websocket.accept()
+#     client_id = id(websocket)
+#     connections[client_id] = websocket
+#     global chat_status  # Access global chat status
+#     conversation_data = []  # Store conversation data for final recommendations
+
+#     try:
+#         # Listen for messages from the client
+#         data = await websocket.receive_text()
+#         print(f"Received message from client: {data}")
+
+#         # Start a new conversation if chat_status is not "chat_ongoing"
+#         if chat_status != "chat_ongoing":
+#             chat_status = "chat_ongoing"
+#             with print_queue.mutex:
+#                 print_queue.queue.clear()
+#             with user_queue.mutex:
+#                 user_queue.queue.clear()
+
+#         # Trigger the main agent conversation
+#         async for message in start_agent_conversation_stream(data):
+#             print(f"Main conversation message: {message}")  # Log main conversation messages
+#             # Store conversation data for later use
+#             conversation_data.append(message)
+
+#             # Stream each message to the client
+#             await websocket.send_text(json.dumps(message))
+
+#             # Check for termination of the first group chat
+#             if message.get("content") == "TERMINATE":
+#                 print("First group chat has ended. Proceeding to final recommendations.")
+#                 break
+
+#         # Ensure conversation_data has content before initiating final recommendations
+#         if not conversation_data:
+#             error_message = "No messages collected during the main conversation. Cannot proceed to final recommendations."
+#             print(error_message)
+#             await websocket.send_text(json.dumps({
+#                 "content": error_message,
+#                 "role": "system",
+#                 "name": "Error",
+#                 "timestamp": datetime.now().strftime("%H:%M:%S")
+#             }))
+#             return
+
+#         # Trigger final recommendations
+#         try:
+#             print(f"Initiating final recommendations with collected data: {conversation_data}")
+#             async for final_message in initiate_final_recommendation(conversation_data):
+#                 # Handle final recommendations
+#                 if final_message.get("content") == "FINAL_RECOMMENDATIONS_COMPLETE":
+#                     print("Final recommendations phase completed.")
+#                     await websocket.send_text(json.dumps({
+#                         "content": "Final recommendations have been generated.",
+#                         "role": "system",
+#                         "name": "System",
+#                         "timestamp": datetime.now().strftime("%H:%M:%S"),
+#                         "final_recommendations": True
+#                     }))
+#                     break
+#                 await websocket.send_text(json.dumps(final_message))
+#         except Exception as e:
+#             print(f"Error during final recommendations phase: {e}")
+#             await websocket.send_text(json.dumps({
+#                 "content": f"Error during final recommendations phase: {str(e)}",
+#                 "role": "system",
+#                 "name": "Error",
+#                 "timestamp": datetime.now().strftime("%H:%M:%S")
+#             }))
+
+#         # Send a final message to indicate the entire process has completed
+#         await websocket.send_text(json.dumps({
+#             "content": "Conversation completed with final recommendations.",
+#             "role": "system",
+#             "name": "System",
+#             "timestamp": datetime.now().strftime("%H:%M:%S"),
+#             "final_recommendations": True
+#         }))
+
+#         chat_status = "ended"  # Mark chat as ended after final recommendations
+#         print("Final recommendations sent. Keeping WebSocket open momentarily.")
+#         await asyncio.sleep(1)  # Delay to ensure message reaches client
+
+#     except WebSocketDisconnect:
+#         print(f"Client {client_id} disconnected")
+#         del connections[client_id]
+#         chat_status = "ended"
+#     except Exception as e:
+#         print(f"Unexpected error: {e}")
+#     finally:
+#         # Ensure cleanup and reset
+#         del connections[client_id]
+#         chat_status = "ended"
+#         print(f"Connection {client_id} cleaned up. Chat status reset.")
+
+# Other endpoint definitions remain unchanged
 
 async def run_chat():
-    global chat_status
-    try:
-        while chat_status == "chat_ongoing":
-            if not user_queue.empty():
-                user_input = user_queue.get()
-                async for message in start_agent_conversation_stream(user_input):
-                    msg_content = {
-                        "content": message,
-                        "role": "agent",
-                        "name": "Agent",
-                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                    }
-                    for websocket in connections.values():
-                        await websocket.send_text(json.dumps(msg_content))
-                    await asyncio.sleep(0.1)
-            await asyncio.sleep(1)
-    except Exception as e:
-        chat_status = "error"
-        error_message = {
-            "content": f"An error occurred: {str(e)}",
-            "role": "system",
-            "name": "Error",
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-        }
-        for websocket in connections.values():
-            await websocket.send_text(json.dumps(error_message))
-    finally:
-        chat_status = "ended"  # Ensure the status is reset once the chat is finished
+    # Define the logic for the run_chat function here
+    pass
 
 @router.post("/start-agents")
 async def start_agents(background_tasks: BackgroundTasks):
@@ -123,7 +181,9 @@ async def start_agents(background_tasks: BackgroundTasks):
 async def download_recommendations():
     csv_file_path = "azure_analysis_results.csv"
     if os.path.exists(csv_file_path):
+        print(f"Downloading CSV file: {csv_file_path}")  # Log file download
         return Response(open(csv_file_path, "rb").read(), media_type="text/csv")
+    print("CSV file not found.")  # Log missing file
     return {"error": "CSV file not found"}
 
 @router.post("/api/send_message")
@@ -132,5 +192,7 @@ async def send_message(request: Request):
     user_input = body.get("message", "")
     if user_input:
         user_queue.put(user_input)
+        print(f"Message received and added to queue: {user_input}")  # Log message
         return JSONResponse({"status": "Message Received"})
+    print("Error: No message provided in send_message request.")
     return JSONResponse({"status": "Error", "message": "No message provided"}, status_code=400)

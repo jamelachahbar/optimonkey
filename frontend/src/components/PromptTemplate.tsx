@@ -36,7 +36,11 @@ const prompts = [
         The User Proxy will execute the code and interact with the system. He will provide the results to the user.
 
         # Task:
-        Your task is to analyze the Azure environment and find opportunities to save money on Virtual Machines on this subscription:38c26c07-ccce-4839-b504-cddac8e5b09d.
+        Your task is to analyze the Azure environment and find opportunities to save money on Virtual Machines on this subscription ID: e9b4640d-1f1f-45fe-a543-c0ea45ac34c1 and use this log analytics workspace id: fdd39622-ae5a-4eb8-987b-14ae8aad63dd
+        Please analyze my Azure environment and find opportunities to save money based on activity and usage.
+        Generate recommendations, and for each recommendation, infer the resource type (e.g., Virtual Machines, Storage Accounts, Disks) based on its data fields.
+        Provide the resource type, reasoning for the classification, and the recommendation details in JSON format.
+
         You need to provide a top 5 of Virtual Machines that are underutilized and suggest ways to save costs.
         
         Example Output:
@@ -74,8 +78,12 @@ const prompts = [
         The User Proxy will execute the code and interact with the system. He will provide the results to the user.
 
         # Task:
-        Please analyze my Azure environment and find unused Storage Accounts to reduce costs on this subscription:38c26c07-ccce-4839-b504-cddac8e5b09d.
+        Please analyze my Azure environment and find unused Storage Accounts to reduce costs on this subscription ID:e9b4640d-1f1f-45fe-a543-c0ea45ac34c1.
         You need to provide a list of Storage Accounts that are underutilized and suggest ways to save costs.
+        Please analyze my Azure environment and find opportunities to save money based on activity and usage.
+        Generate recommendations, and for each recommendation, infer the resource type (e.g., Virtual Machines, Storage Accounts, Disks) based on its data fields.
+        Provide the resource type, reasoning for the classification, and the recommendation details in JSON format.
+
         Make sure it is only 5 recommendations.
         #EXAMPLE OUTPUT 1:
         storage_account,used_capacity,transactions,ingress,egress,lastAccessDateTime,recommendation
@@ -91,7 +99,16 @@ const prompts = [
         finopshub0275wqmmubtdx2s,"UsedCapacity: 3452545608015.0, Transactions: 316.0",Evaluate retention policy for data.,Moderate transactions but high use of premium storage tier.,Move less accessed data to cheaper storage options.
         mgmtbadc,"UsedCapacity: 146679634924.0, Transactions: 717.0",Optimize ingress and cleanup infrequently accessed data.,High ingress vs. egress disparity.,Conduct regular audits to manage storage efficiently.
         mgmtbdaa,"UsedCapacity: 6409680069847.0, Transactions: 720.0",Consider tiering or archive options for unused data.,Large capacity use with minimal access.,Balance data availability needs with storage costs.
-        stgaccttest123654,"UsedCapacity: 44113307.0, Transactions: 720.0",Evaluate data lifecycle management.,Consistent low transactions suggest potential over-allocation.,Identify stale data and set rules for automatic deletion.`,
+        stgaccttest123654,"UsedCapacity: 44113307.0, Transactions: 720.0",Evaluate data lifecycle management.,Consistent low transactions suggest potential over-allocation.,Identify stale data and set rules for automatic deletion.
+
+        EXAMPLE OUTPUT 3:
+        storage_account,used_capacity,transactions,ingress,egress,last_access_time,recommendation
+        aoejmlsa,165319163258.0,720.0,19911.13,252578.81,2024-12-31T10:11:20.983269,Downgrade performance tier or consolidate.
+        stgacctjmlaoetest,1309084176.0,720.0,12253557.88,420312.86,2024-12-31T10:11:20.983777,Review data retention policies.
+        ssawafjml001,49795871.0,154.0,56928.93,139242.62,2024-12-31T10:11:20.983777,Consider decommissioning.
+        finopshubfjeq2enxw6anc,2299813193.0,176.0,4135419.58,6830553.83,2024-12-31T10:11:20.983777,Move infrequently accessed data to cooler tiers.
+        st7oiiy3jl26c66,2723855405.0,720.0,5126545.3,1312183.85,2024-12-31T10:11:20.983777,Downgrade performance tier or consolidate.`,
+
     icon: FaDatabase,
   },
   {
@@ -120,12 +137,17 @@ const prompts = [
         The Critic will evaluate the quality of the code and provide a score from 1 to 10.
         The User Proxy will execute the code and interact with the system. He will provide the results to the user.
         #Task: 
-        Please analyze my Azure environment and find opportunities to optimize disk usage on this subscription:38c26c07-ccce-4839-b504-cddac8e5b09d.
-        
+        Please analyze my Azure environment and find opportunities to optimize disk usage on this subscription ID:e9b4640d-1f1f-45fe-a543-c0ea45ac34c1.
+        Please analyze my Azure environment and find opportunities to save money based on activity and usage.
+        Generate recommendations, and for each recommendation, infer the resource type (e.g., Virtual Machines, Storage Accounts, Disks) based on its data fields.
+        Provide the resource type, reasoning for the classification, and the recommendation details in JSON format.
+
         #Example Output 1:
         disk_resource_id,disk_state,disk_type,disk_size,used_capacity,read_iops,write_iops,read_throughput,write_throughput,recommendation
         /subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/acodemos/providers/Microsoft.Compute/disks/hackatonunuseddisk,Unattached,,,0,0,0,0,0,Consider decommissioning.
         /subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/MGMT/providers/Microsoft.Compute/disks/VM-LINUX-01_OsDisk_1_765c8e478e9148afa4ba3d2dc370d52e,Reserved,,,13821,57087,0,13821,57087,Consider removing unattached disks.
+        My subscription IDs are 38c26c07-ccce-4839-b504-cddac8e5b09d,e9b4640d-1f1f-45fe-a543-c0ea45ac34c1
+
         `,
         icon: FaHdd,
   },
@@ -143,12 +165,17 @@ const prompts = [
     The Coder will write the code to analyze the Azure environment and save the results to a CSV file. He has access to the Azure SDKs and can execute the code based on functions provided by the Planner. These functions include running a Kusto query, querying usage metrics, and saving results to a CSV file.
     The Critic will evaluate the quality of the code and provide a score from 1 to 10.
     The User Proxy will execute the code and interact with the system. He will provide the results to the user.
-    # Task: Please analyze my Azure environment and find opportunities to optimize network usage on this subscription:38c26c07-ccce-4839-b504-cddac8e5b09d.
+    # Task: Please analyze my Azure environment and find opportunities to optimize network usage on this subscription ID:e9b4640d-1f1f-45fe-a543-c0ea45ac34c1.
+            Please analyze my Azure environment and find opportunities to save money based on activity and usage.
+        Generate recommendations, and for each recommendation, infer the resource type (e.g., Virtual Machines, Storage Accounts, Disks) based on its data fields.
+        Provide the resource type, reasoning for the classification, and the recommendation details in JSON format.
+
     #Example Output 1:
     network_resource_id,network_type,ingress,ingress_rate,egress,egress_rate,used_capacity,recommendation
     /subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/MGMT/providers/Microsoft.Network/networkInterfaces/VM-LINUX-01_NetworkInterface_1,Public,0,0,0,0,0,Consider removing unused network interfaces.
     /subscriptions/38c26c07-ccce-4839-b504-cddac8e5b09d/resourceGroups/MGMT/providers/Microsoft.Network/networkSecurityGroups/VM-LINUX-01_NSG,Private,0,0,0,0,0,Review network security rules for optimization.
-    
+    My subscription IDs are e9b4640d-1f1f-45fe-a543-c0ea45ac34c1
+
     `,
     icon: FaNetworkWired,
 
@@ -158,7 +185,11 @@ const prompts = [
     description: 'Find new insights from my environment.',
     prompt: `You are a team of azure experts and your job is to generate new insights from the Azure environment. 
     Use the functions you have access to.
-    My subscription ID is 38c26c07-ccce-4839-b504-cddac8e5b09d.
+    My subscription ID is e9b4640d-1f1f-45fe-a543-c0ea45ac34c1
+    Please analyze my Azure environment and find opportunities to save money based on activity and usage.
+    Generate recommendations, and for each recommendation, infer the resource type (e.g., Virtual Machines, Storage Accounts, Disks) based on its data fields.
+    Provide the resource type, reasoning for the classification, and the recommendation details in JSON format.
+
     `,
     icon: FaInfinity,
 
@@ -167,11 +198,11 @@ const prompts = [
 
 const PromptTemplate: React.FC<PromptTemplateProps> = ({ onSelectPrompt }) => {
   return (
-    <SimpleGrid columns={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing={6} p={4}>
+    <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 6 }} spacing={3}>
       {prompts.map((template, index) => (
         <Box
           key={index}
-          p={6}
+          p={4}
           shadow="lg"
           borderWidth="1px"
           borderRadius="md"
@@ -189,7 +220,7 @@ const PromptTemplate: React.FC<PromptTemplateProps> = ({ onSelectPrompt }) => {
           alignItems="center"
           textAlign="center"
         >
-          <Icon as={template.icon} w={10} h={10} mb={4} color="teal.600" />
+          <Icon as={template.icon} w={6} h={6} mb={2} color="teal.600" />
           <Text fontSize="md" fontWeight="bold" mb={2}>
             {template.title}
           </Text>
