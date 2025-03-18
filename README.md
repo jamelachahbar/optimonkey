@@ -1,4 +1,4 @@
-# OptiMonkey
+# OptiMonkey:
 
 OptiMonkey is an interactive web application that allows users to analyze their Azure environment for optimization opportunities using intelligent agents. The system provides recommendations to save costs on resources such as Virtual Machines, Storage Accounts, and Disks. Users can either start agents with a default prompt or choose custom prompts from predefined templates.
 
